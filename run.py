@@ -3,7 +3,7 @@
 import time
 import subprocess
 
-from src.Runner import Runner
+from Runner import Runner
 
 
 if __name__ == '__main__':
