@@ -10,7 +10,7 @@ from model.Faction import Faction
 
 
 class MyStrategy:
-
+    LOGS_ENABLE = False
     INITIATED = False
     WAY_POINTS = list()
     NEXT_WAYPOINT = 1
@@ -21,9 +21,9 @@ class MyStrategy:
     PASS_TICK_COUNT = 10
     W = None
 
-    @staticmethod
-    def log(message):
-        print(message)
+    def log(self, message):
+        if self.LOGS_ENABLE:
+            print(message)
 
     def _init(self, game: Game, me: Wizard, world: World):
         self.W = world
@@ -68,15 +68,21 @@ class MyStrategy:
                 pass
         return wp
 
-    def _find_connected_units(self):
-        self.W
-        return []
+    def _find_problem_units(self, me: Wizard):
+        units = self.W.buildings + self.W.wizards + self.W.minions + self.W.trees
+        connected_u = [t for t in units if me.get_distance_to_unit(t) <= (me.radius + t.radius) * 1.05 and me.id != t.id]
+        problem_u = [t for t in connected_u if self._check_enemy_in_attack_sector(me, t)]
+        return None if not problem_u else problem_u[0]
 
     def _goto(self, coords_tuple, move: Move, me: Wizard):
-        connected_units = self._find_connected_units()
-        if connected_units:
-            # todo обход препятствия
-            pass
+        problem_unit = self._find_problem_units(me)
+        if problem_unit:
+            angle_to_connected_unit = me.get_angle_to_unit(problem_unit)
+            self.log('found connected unit %s (%.4f angle)' % (problem_unit, angle_to_connected_unit))
+            if angle_to_connected_unit > 0:
+                move.strafe_speed = -1 * self.G.wizard_strafe_speed
+            else:
+                move.strafe_speed = self.G.wizard_strafe_speed
         else:
             # рандомно прыгаем влево-вправо по направлению движения
             move.strafe_speed = self.G.wizard_strafe_speed if choice([True, False]) else -1 * self.G.wizard_strafe_speed
@@ -84,14 +90,6 @@ class MyStrategy:
             move.turn = angle
             if fabs(angle) < self.STAFF_SECTOR / 4.0:
                 move.speed = self.MAX_SPEED
-
-
-    def _retreat_to_home(self, move: Move, me: Wizard):
-        # todo умное отступление с удержанием врагов в секторе обстрела
-        self._goto(self._get_prev_waypoint(me), move, me)
-
-    def _move_to_next_waypoint(self, move: Move, me: Wizard):
-        self._goto(self._get_next_waypoint(me), move, me)
 
     def _get_enemies_for_attack(self, me: Wizard):
         all_targets = self.W.buildings + self.W.wizards + self.W.minions
@@ -107,13 +105,14 @@ class MyStrategy:
 
     @staticmethod
     def _can_staff_attack_enemy(me: Wizard, game: Game, e):
+        # fixme not worked
         distance = me.get_distance_to_unit(e)
         return distance <= (game.staff_range + e.radius)
 
     @staticmethod
     def _check_allow_range_attack(me: Wizard, game: Game):
-        current_mana = me.mana
         # todo add fireball
+        current_mana = me.mana
         if not me.remaining_cooldown_ticks_by_action[ActionType.FROST_BOLT] and game.frost_bolt_manacost <= current_mana:
             return True
         if not me.remaining_cooldown_ticks_by_action[ActionType.MAGIC_MISSILE] and game.magic_missile_manacost <= current_mana:
@@ -171,19 +170,15 @@ class MyStrategy:
             self.log('initial cooldown pass turn')
             return
 
-        # action cooldown
-        if me.remaining_action_cooldown_ticks > 0:
-            self.log('cooldown pass turn')
-            move.action = ActionType.NONE
-            return
-
         # если ХП мало и мы находимся в секторе атаки врагов - отступаем
         if me.life < me.max_life * self.LOW_HP_FACTOR:
             self.log('retreat to home by low HP')
-            self._retreat_to_home(move, me)
+            # todo умное отступление с удержанием врагов в секторе обстрела
+            self._goto(self._get_prev_waypoint(me), move, me)
             return
 
         # есть враги в радиусе обстрела
+        # todo проверить что мы можем атаковать
         range_enemies, staff_enemies = self._get_enemies_for_attack(me)
         if range_enemies or staff_enemies:
             self.log('found range %d enemies and %d for staff attack' % (len(range_enemies), len(staff_enemies)))
@@ -211,4 +206,4 @@ class MyStrategy:
                 move.turn = angle_to_enemy
         else:
             self.log('move to next waypoint')
-            self._move_to_next_waypoint(move, me)
+            self._goto(self._get_next_waypoint(me), move, me)
