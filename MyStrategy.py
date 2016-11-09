@@ -41,7 +41,7 @@ class MyStrategy:
     def _compute_waypoints(home_x, home_y, map_size):
         wps = list()
         wps.append((home_x, home_y))  # add home base
-        wps.append((map_size / 2, map_size / 2))  # add center
+        wps.append((map_size / 2, map_size / 2))  # todo change to nearest center friendly tower
         wps.append((map_size - home_x, map_size - home_y))  # add enemy base
         return wps
 
@@ -58,6 +58,8 @@ class MyStrategy:
         return wp
 
     def _get_next_waypoint(self, me: Wizard):
+        # todo больше точек на линии
+        # todo другие линии
         wp = self.WAY_POINTS[self.NEXT_WAYPOINT]
         if me.get_distance_to(*wp) < me.radius * 2:
             try:
@@ -149,7 +151,6 @@ class MyStrategy:
         # find can attacked targets
         enemies_in_attack_sector = _filter_into_attack_sector(all_enemies)
         if enemies_in_attack_sector:
-            # todo find low HP targets
             # todo find nearest targets
             # todo find primary targets
             e = _sort_by_hp(enemies_in_attack_sector)[0]
@@ -163,8 +164,8 @@ class MyStrategy:
     def move(self, me: Wizard, world: World, game: Game, move: Move):
         self._init(game, me, world)
 
+        # todo чтение сообщений и следование им
         # todo руководство другими волшебниками
-
         # todo usage bonuses
 
         # initial cooldown
@@ -177,6 +178,8 @@ class MyStrategy:
         if me.life < me.max_life * self.LOW_HP_FACTOR:
             self.log('retreat to home by low HP')
             # todo умное отступление с удержанием врагов в секторе обстрела
+            # todo не отступать, если уже дошли до базы врагов
+            # todo отступать только из зоны атаки врагов (не до самой базы)
             self._goto(self._get_prev_waypoint(me), move, me)
             return
 
