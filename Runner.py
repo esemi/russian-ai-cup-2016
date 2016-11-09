@@ -16,7 +16,7 @@ class Runner:
             self.remote_process_client = RemoteProcessClient("127.0.0.1", 31001)
             self.token = "0000000000000000"
 
-    def run(self, pid):
+    def run(self, pid=None):
         try:
             self.remote_process_client.write_token_message(self.token)
             self.remote_process_client.write_protocol_version_message()
@@ -49,4 +49,5 @@ class Runner:
                 self.remote_process_client.write_moves_message(moves)
         finally:
             self.remote_process_client.close()
-            os.kill(pid, signal.SIGTERM)
+            if pid:
+                os.kill(pid, signal.SIGTERM)
