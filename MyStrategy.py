@@ -10,7 +10,7 @@ from model.Faction import Faction
 
 
 class MyStrategy:
-    LOGS_ENABLE = False
+    LOGS_ENABLE = True
     INITIATED = False
     WAY_POINTS = list()
     NEXT_WAYPOINT = 1
@@ -29,6 +29,7 @@ class MyStrategy:
         self.W = world
         self.G = game
         if not self.INITIATED:
+            self.PROBLEM_ANGLE = 1.2
             self.STAFF_SECTOR = self.G.staff_sector
             self.MAX_SPEED = self.G.wizard_forward_speed
             self.FRIENDLY_FACTION = me.faction
@@ -71,7 +72,7 @@ class MyStrategy:
     def _find_problem_units(self, me: Wizard):
         units = self.W.buildings + self.W.wizards + self.W.minions + self.W.trees
         connected_u = [t for t in units if me.get_distance_to_unit(t) <= (me.radius + t.radius) * 1.05 and me.id != t.id]
-        problem_u = [t for t in connected_u if self._check_enemy_in_attack_sector(me, t)]
+        problem_u = [t for t in connected_u if fabs(me.get_angle_to_unit(t)) < self.PROBLEM_ANGLE]
         return None if not problem_u else problem_u[0]
 
     def _goto(self, coords_tuple, move: Move, me: Wizard):
@@ -80,8 +81,10 @@ class MyStrategy:
             angle_to_connected_unit = me.get_angle_to_unit(problem_unit)
             self.log('found connected unit %s (%.4f angle)' % (problem_unit, angle_to_connected_unit))
             if angle_to_connected_unit > 0:
+                self.log('run left')
                 move.strafe_speed = -1 * self.G.wizard_strafe_speed
             else:
+                self.log('run right')
                 move.strafe_speed = self.G.wizard_strafe_speed
         else:
             # рандомно прыгаем влево-вправо по направлению движения
