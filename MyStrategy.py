@@ -6,6 +6,7 @@ from model.Move import Move
 from model.Wizard import Wizard
 from model.World import World
 from model.Faction import Faction
+from model.LivingUnit import LivingUnit
 
 
 class MyStrategy:
@@ -14,10 +15,11 @@ class MyStrategy:
     WAY_POINTS = list()
     NEXT_WAYPOINT = 1
     PREV_WAYPOINT = 0
-    LOW_HP_FACTOR = 0.4
+    LOW_HP_FACTOR = 0.5
     STAFF_SECTOR = None
     FRIENDLY_FACTION = None
     PASS_TICK_COUNT = 10
+    DANGER_DISTANCE_FACTOR = 1.2
     W = None
 
     def log(self, message):
@@ -35,6 +37,8 @@ class MyStrategy:
             self.WAY_POINTS = self._compute_waypoints(me.x, me.y, map_size=self.G.map_size)
             self.INITIATED = True
             self.log('init process way points %s' % self.WAY_POINTS)
+        else:
+            self.log('TICK %s' % world.tick_index)
 
     @staticmethod
     def _compute_waypoints(home_x, home_y, map_size):
@@ -92,14 +96,13 @@ class MyStrategy:
                 move.speed = self.MAX_SPEED
 
     def _get_enemies_for_attack(self, me: Wizard):
-        all_targets = self.W.buildings + self.W.wizards + self.W.minions
-        enemy_targets = [t for t in all_targets if t.faction not in [self.FRIENDLY_FACTION, Faction.NEUTRAL]]
+        enemy_targets = self._get_enemies()
         cast_attack = [t for t in enemy_targets if self._enemy_in_range_attack_distance(me, self.G, t)]
         staff_attack = [t for t in enemy_targets if self._can_staff_attack_enemy(me, self.G, t)]
         return cast_attack, staff_attack
 
     @staticmethod
-    def _enemy_in_range_attack_distance(me: Wizard, game: Game, e):
+    def _enemy_in_range_attack_distance(me: Wizard, game: Game, e: LivingUnit):
         distance = me.get_distance_to_unit(e)
         return (game.staff_range + e.radius) < distance <= me.cast_range
 
@@ -109,14 +112,9 @@ class MyStrategy:
         return distance <= (game.staff_range + e.radius)
 
     @staticmethod
-    def _check_allow_range_attack(me: Wizard, game: Game):
-        current_mana = me.mana
-        if not me.remaining_cooldown_ticks_by_action[ActionType.FROST_BOLT] and game.frost_bolt_manacost <= current_mana:
-            return True
-        if not me.remaining_cooldown_ticks_by_action[ActionType.MAGIC_MISSILE] and game.magic_missile_manacost <= current_mana:
-            return True
-
-        return False
+    def _can_range_attack(me: Wizard, game: Game):
+        return not me.remaining_cooldown_ticks_by_action[ActionType.MAGIC_MISSILE] and \
+               game.magic_missile_manacost <= me.mana
 
     def _check_enemy_in_attack_sector(self, me: Wizard, e):
         return fabs(me.get_angle_to_unit(e)) < self.STAFF_SECTOR / 2.0
@@ -139,7 +137,10 @@ class MyStrategy:
             return e, True
 
         # если у нас есть возможность кастовать - то ищем цель и среди удалённых
-        all_enemies = (staff_enemies + range_enemies) if self._check_allow_range_attack(me, self.G) else staff_enemies
+        all_enemies = (staff_enemies + range_enemies) if self._can_range_attack(me, self.G) else staff_enemies
+
+        if not all_enemies:
+            return None, False
 
         # find can attacked targets
         enemies_in_attack_sector = _filter_into_attack_sector(all_enemies)
@@ -161,10 +162,12 @@ class MyStrategy:
             self.log('initial cooldown pass turn')
             return
 
-        # если ХП мало и мы находимся в секторе атаки врагов - отступаем
-        if me.life < me.max_life * self.LOW_HP_FACTOR:
-            self.log('retreat to home by low HP')
-            self._goto(self._get_prev_waypoint(me), move, me)
+        # если ХП мало - стоим или отступаем
+        if self._need_retreat(me):
+            self.log('retreat case')
+            if self._enemies_in_danger_distance(me):
+                self.log('retreat to home by low HP and enemies in attack range')
+                self._goto(self._get_prev_waypoint(me), move, me)
             return
 
         # есть враги в радиусе обстрела
@@ -173,6 +176,10 @@ class MyStrategy:
             self.log('found range %d enemies and %d for staff attack' % (len(range_enemies), len(staff_enemies)))
 
             attack_enemy, can_attack = self._select_enemy_for_attack(me, staff_enemies, range_enemies)
+            if not attack_enemy:
+                self.log('cooldown for attack - hold on place')
+                return
+
             angle_to_enemy = me.get_angle_to_unit(attack_enemy)
             if can_attack:
                 self.log('select enemy for attack %s' % attack_enemy.id)
@@ -190,3 +197,18 @@ class MyStrategy:
         else:
             self.log('move to next waypoint')
             self._goto(self._get_next_waypoint(me), move, me)
+
+    def _need_retreat(self, me: Wizard):
+        return me.life < me.max_life * self.LOW_HP_FACTOR
+
+    def _get_enemies(self):
+        all_targets = self.W.buildings + self.W.wizards + self.W.minions
+        enemy_targets = [t for t in all_targets if t.faction not in [self.FRIENDLY_FACTION, Faction.NEUTRAL]]
+        return enemy_targets
+
+    def _enemies_in_danger_distance(self, me: Wizard):
+        enemies = self._get_enemies()
+        danger_enemies = [e for e in enemies
+                          if me.get_distance_to_unit(e) <= me.cast_range * self.DANGER_DISTANCE_FACTOR]
+        self.log('found %d enemies in danger zone' % len(danger_enemies))
+        return len(danger_enemies) > 0
