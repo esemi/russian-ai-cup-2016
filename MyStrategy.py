@@ -1,4 +1,3 @@
-from random import choice
 from math import fabs
 
 from model.ActionType import ActionType
@@ -29,7 +28,7 @@ class MyStrategy:
         self.W = world
         self.G = game
         if not self.INITIATED:
-            self.PROBLEM_ANGLE = 1.2
+            self.PROBLEM_ANGLE = 1.6
             self.STAFF_SECTOR = self.G.staff_sector
             self.MAX_SPEED = self.G.wizard_forward_speed
             self.FRIENDLY_FACTION = me.faction
@@ -41,7 +40,7 @@ class MyStrategy:
     def _compute_waypoints(home_x, home_y, map_size):
         wps = list()
         wps.append((home_x, home_y))  # add home base
-        wps.append((map_size / 2, map_size / 2))  # todo change to nearest center friendly tower
+        wps.append((map_size / 2, map_size / 2))  # center
         wps.append((map_size - home_x, map_size - home_y))  # add enemy base
         return wps
 
@@ -58,8 +57,6 @@ class MyStrategy:
         return wp
 
     def _get_next_waypoint(self, me: Wizard):
-        # todo больше точек на линии
-        # todo другие линии
         wp = self.WAY_POINTS[self.NEXT_WAYPOINT]
         if me.get_distance_to(*wp) < me.radius * 2:
             try:
@@ -89,8 +86,6 @@ class MyStrategy:
                 self.log('run right')
                 move.strafe_speed = self.G.wizard_strafe_speed
         else:
-            # рандомно прыгаем влево-вправо по направлению движения
-            move.strafe_speed = self.G.wizard_strafe_speed if choice([True, False]) else -1 * self.G.wizard_strafe_speed
             angle = me.get_angle_to(*coords_tuple)
             move.turn = angle
             if fabs(angle) < self.STAFF_SECTOR / 4.0:
@@ -99,24 +94,22 @@ class MyStrategy:
     def _get_enemies_for_attack(self, me: Wizard):
         all_targets = self.W.buildings + self.W.wizards + self.W.minions
         enemy_targets = [t for t in all_targets if t.faction not in [self.FRIENDLY_FACTION, Faction.NEUTRAL]]
-        cast_attack = [t for t in enemy_targets if self._can_range_attack_enemy(me, self.G, t)]
+        cast_attack = [t for t in enemy_targets if self._enemy_in_range_attack_distance(me, self.G, t)]
         staff_attack = [t for t in enemy_targets if self._can_staff_attack_enemy(me, self.G, t)]
         return cast_attack, staff_attack
 
     @staticmethod
-    def _can_range_attack_enemy(me: Wizard, game: Game, e):
+    def _enemy_in_range_attack_distance(me: Wizard, game: Game, e):
         distance = me.get_distance_to_unit(e)
         return (game.staff_range + e.radius) < distance <= me.cast_range
 
     @staticmethod
     def _can_staff_attack_enemy(me: Wizard, game: Game, e):
-        # fixme not worked
         distance = me.get_distance_to_unit(e)
         return distance <= (game.staff_range + e.radius)
 
     @staticmethod
     def _check_allow_range_attack(me: Wizard, game: Game):
-        # todo add fireball
         current_mana = me.mana
         if not me.remaining_cooldown_ticks_by_action[ActionType.FROST_BOLT] and game.frost_bolt_manacost <= current_mana:
             return True
@@ -151,8 +144,6 @@ class MyStrategy:
         # find can attacked targets
         enemies_in_attack_sector = _filter_into_attack_sector(all_enemies)
         if enemies_in_attack_sector:
-            # todo find nearest targets
-            # todo find primary targets
             e = _sort_by_hp(enemies_in_attack_sector)[0]
             self.log('select enemy in attack sector %s' % e.id)
             return e, True
@@ -164,10 +155,6 @@ class MyStrategy:
     def move(self, me: Wizard, world: World, game: Game, move: Move):
         self._init(game, me, world)
 
-        # todo чтение сообщений и следование им
-        # todo руководство другими волшебниками
-        # todo usage bonuses
-
         # initial cooldown
         if self.PASS_TICK_COUNT:
             self.PASS_TICK_COUNT -= 1
@@ -177,31 +164,21 @@ class MyStrategy:
         # если ХП мало и мы находимся в секторе атаки врагов - отступаем
         if me.life < me.max_life * self.LOW_HP_FACTOR:
             self.log('retreat to home by low HP')
-            # todo умное отступление с удержанием врагов в секторе обстрела
-            # todo не отступать, если уже дошли до базы врагов
-            # todo отступать только из зоны атаки врагов (не до самой базы)
             self._goto(self._get_prev_waypoint(me), move, me)
             return
 
         # есть враги в радиусе обстрела
-        # todo проверить что мы можем атаковать
         range_enemies, staff_enemies = self._get_enemies_for_attack(me)
         if range_enemies or staff_enemies:
             self.log('found range %d enemies and %d for staff attack' % (len(range_enemies), len(staff_enemies)))
 
             attack_enemy, can_attack = self._select_enemy_for_attack(me, staff_enemies, range_enemies)
-
-            # todo если врагов больно много - отступаем по маленьку
-            # todo если стрелять пока нечем - отступаем по маленьку
-            # todo если враги в секторе ближней атаки - отступаем по маленьку
-
             angle_to_enemy = me.get_angle_to_unit(attack_enemy)
             if can_attack:
                 self.log('select enemy for attack %s' % attack_enemy.id)
                 move.cast_angle = angle_to_enemy
-                if self._can_range_attack_enemy(me, game, attack_enemy):
+                if self._enemy_in_range_attack_distance(me, game, attack_enemy):
                     self.log('cast attack')
-                    # todo another attack cast
                     move.action = ActionType.MAGIC_MISSILE
                     move.min_cast_distance = me.get_distance_to_unit(attack_enemy) - attack_enemy.radius + self.G.magic_missile_radius
                 else:
