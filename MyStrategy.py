@@ -15,38 +15,82 @@ class MyStrategy:
     WAY_POINTS = list()
     NEXT_WAYPOINT = 1
     PREV_WAYPOINT = 0
-    LOW_HP_FACTOR = 0.5
+    LOW_HP_FACTOR = 0.4
     STAFF_SECTOR = None
     FRIENDLY_FACTION = None
     PASS_TICK_COUNT = 10
-    DANGER_DISTANCE_FACTOR = 1.2
+    WARNING_DISTANCE_FACTOR = 1.2
+    # максимальное количество врагов в ближней зоне
+    # если больше - нужно сваливать
+    MAX_ENEMIES_IN_STAFF_ZONE = 1
     W = None
-
-    def log(self, message):
-        if self.LOGS_ENABLE:
-            print(message)
 
     def _init(self, game: Game, me: Wizard, world: World):
         self.W = world
         self.G = game
         if not self.INITIATED:
+            def compute_waypoints(home_x, home_y, map_size):
+                wps = list()
+                wps.append((home_x, home_y))  # add home base
+                wps.append((map_size / 2, map_size / 2))  # center
+                wps.append((map_size - home_x, map_size - home_y))  # add enemy base
+                return wps
+
             self.PROBLEM_ANGLE = 1.6
             self.STAFF_SECTOR = self.G.staff_sector
             self.MAX_SPEED = self.G.wizard_forward_speed
             self.FRIENDLY_FACTION = me.faction
-            self.WAY_POINTS = self._compute_waypoints(me.x, me.y, map_size=self.G.map_size)
+            self.WAY_POINTS = compute_waypoints(me.x, me.y, map_size=self.G.map_size)
             self.INITIATED = True
             self.log('init process way points %s' % self.WAY_POINTS)
         else:
             self.log('TICK %s' % world.tick_index)
 
-    @staticmethod
-    def _compute_waypoints(home_x, home_y, map_size):
-        wps = list()
-        wps.append((home_x, home_y))  # add home base
-        wps.append((map_size / 2, map_size / 2))  # center
-        wps.append((map_size - home_x, map_size - home_y))  # add enemy base
-        return wps
+    def move(self, me: Wizard, world: World, game: Game, move: Move):
+        self._init(game, me, world)
+
+        # initial cooldown
+        if self.PASS_TICK_COUNT:
+            self.PASS_TICK_COUNT -= 1
+            self.log('initial cooldown pass turn')
+            return
+
+        # если ХП мало - стоим или отступаем
+        if self._need_retreat(me):
+            self.log('retreat case')
+            if self._enemies_in_warning_distance_count(me):
+                self.log('retreat to home by low HP and enemies in attack range')
+                self._goto(self._get_prev_waypoint(me), move, me)
+            return
+
+        # есть враги в радиусе обстрела
+        range_enemies, staff_enemies = self._get_enemies_for_attack(me)
+        if range_enemies or staff_enemies:
+            self.log('found range %d enemies and %d for staff attack' % (len(range_enemies), len(staff_enemies)))
+
+            attack_enemy, can_attack = self._select_enemy_for_attack(me, staff_enemies, range_enemies)
+            if not attack_enemy:
+                self.log('cooldown for attack - hold on place')
+                return
+
+            angle_to_enemy = me.get_angle_to_unit(attack_enemy)
+            if can_attack:
+                self.log('select enemy for attack %s' % attack_enemy.id)
+                move.cast_angle = angle_to_enemy
+                if self._enemy_in_range_attack_distance(me, game, attack_enemy):
+                    self.log('cast attack')
+                    move.action = ActionType.MAGIC_MISSILE
+                    move.min_cast_distance = me.get_distance_to_unit(
+                        attack_enemy) - attack_enemy.radius + self.G.magic_missile_radius
+                else:
+                    self.log('staff attack')
+                    move.action = ActionType.STAFF
+            else:
+                self.log('select enemy for turn %s' % attack_enemy.id)
+                move.turn = angle_to_enemy
+        else:
+            self.log('move to next waypoint')
+            self._goto(self._get_next_waypoint(me), move, me)
 
     def _get_prev_waypoint(self, me: Wizard):
         wp = self.WAY_POINTS[self.PREV_WAYPOINT]
@@ -153,62 +197,29 @@ class MyStrategy:
         self.log('select enemy for turn %s' % e.id)
         return e, False
 
-    def move(self, me: Wizard, world: World, game: Game, move: Move):
-        self._init(game, me, world)
-
-        # initial cooldown
-        if self.PASS_TICK_COUNT:
-            self.PASS_TICK_COUNT -= 1
-            self.log('initial cooldown pass turn')
-            return
-
-        # если ХП мало - стоим или отступаем
-        if self._need_retreat(me):
-            self.log('retreat case')
-            if self._enemies_in_danger_distance(me):
-                self.log('retreat to home by low HP and enemies in attack range')
-                self._goto(self._get_prev_waypoint(me), move, me)
-            return
-
-        # есть враги в радиусе обстрела
-        range_enemies, staff_enemies = self._get_enemies_for_attack(me)
-        if range_enemies or staff_enemies:
-            self.log('found range %d enemies and %d for staff attack' % (len(range_enemies), len(staff_enemies)))
-
-            attack_enemy, can_attack = self._select_enemy_for_attack(me, staff_enemies, range_enemies)
-            if not attack_enemy:
-                self.log('cooldown for attack - hold on place')
-                return
-
-            angle_to_enemy = me.get_angle_to_unit(attack_enemy)
-            if can_attack:
-                self.log('select enemy for attack %s' % attack_enemy.id)
-                move.cast_angle = angle_to_enemy
-                if self._enemy_in_range_attack_distance(me, game, attack_enemy):
-                    self.log('cast attack')
-                    move.action = ActionType.MAGIC_MISSILE
-                    move.min_cast_distance = me.get_distance_to_unit(attack_enemy) - attack_enemy.radius + self.G.magic_missile_radius
-                else:
-                    self.log('staff attack')
-                    move.action = ActionType.STAFF
-            else:
-                self.log('select enemy for turn %s' % attack_enemy.id)
-                move.turn = angle_to_enemy
-        else:
-            self.log('move to next waypoint')
-            self._goto(self._get_next_waypoint(me), move, me)
-
     def _need_retreat(self, me: Wizard):
-        return me.life < me.max_life * self.LOW_HP_FACTOR
+        enemies_in_staff_zone = self._enemies_in_staff_distance(me)
+        return me.life < me.max_life * self.LOW_HP_FACTOR or len(enemies_in_staff_zone) > self.MAX_ENEMIES_IN_STAFF_ZONE
 
     def _get_enemies(self):
         all_targets = self.W.buildings + self.W.wizards + self.W.minions
         enemy_targets = [t for t in all_targets if t.faction not in [self.FRIENDLY_FACTION, Faction.NEUTRAL]]
         return enemy_targets
 
-    def _enemies_in_danger_distance(self, me: Wizard):
+    def _enemies_in_warning_distance_count(self, me: Wizard):
         enemies = self._get_enemies()
         danger_enemies = [e for e in enemies
-                          if me.get_distance_to_unit(e) <= me.cast_range * self.DANGER_DISTANCE_FACTOR]
-        self.log('found %d enemies in danger zone' % len(danger_enemies))
+                          if me.get_distance_to_unit(e) <= me.cast_range * self.WARNING_DISTANCE_FACTOR]
+        self.log('found %d enemies in warning zone' % len(danger_enemies))
         return len(danger_enemies) > 0
+
+    def _enemies_in_staff_distance(self, me: Wizard):
+        enemies = self._get_enemies()
+        danger_enemies = [e for e in enemies
+                          if me.get_distance_to_unit(e) <= (self.G.staff_range + e.radius)]
+        self.log('found %d enemies in staff zone' % len(danger_enemies))
+        return danger_enemies
+
+    def log(self, message):
+        if self.LOGS_ENABLE:
+            print(message)
