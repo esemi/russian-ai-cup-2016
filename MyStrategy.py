@@ -1,5 +1,6 @@
 from math import fabs
 
+from model.LineType import LineType
 from model.ActionType import ActionType
 from model.Game import Game
 from model.Move import Move
@@ -7,6 +8,7 @@ from model.Wizard import Wizard
 from model.World import World
 from model.Faction import Faction
 from model.Building import Building
+from model.Message import Message
 
 
 class MyStrategy:
@@ -23,18 +25,18 @@ class MyStrategy:
     PREV_WAYPOINT = 0
 
     # количество тиков, которое мы пропускаем в начале боя
-    PASS_TICK_COUNT = 10
+    PASS_TICK_COUNT = 20
 
     # фактор для расстояния выстрела, используется для отступления на минимально необходимое расстояние
     WARNING_DISTANCE_FACTOR = 1.2
 
     # если здоровья меньше данного количества - задумываемся об отступлении
-    LOW_HP_FACTOR = 0.4
+    LOW_HP_FACTOR = 0.45
 
     # максимальное количество врагов в ближней зоне, если больше - нужно сваливать
     MAX_ENEMIES_IN_STAFF_ZONE = 1
 
-    def _init(self, game: Game, me: Wizard, world: World):
+    def _init(self, game: Game, me: Wizard, world: World, move: Move):
         self.W = world
         self.G = game
         if not self.INITIATED:
@@ -47,16 +49,36 @@ class MyStrategy:
 
             self.PROBLEM_ANGLE = 1.6
             self.STAFF_SECTOR = self.G.staff_sector
-            self.MAX_SPEED = self.G.wizard_forward_speed
+            self.MAX_SPEED = self.G.wizard_forward_speed * 2
             self.FRIENDLY_FACTION = me.faction
             self.WAY_POINTS = compute_waypoints(me.x, me.y, map_size=self.G.map_size)
             self.INITIATED = True
             self.log('init process way points %s' % self.WAY_POINTS)
+
+            if me.master or True:
+                teammates = [w for w in self.W.wizards
+                             if w.faction == self.FRIENDLY_FACTION and not w.me]
+                self.log('found %d teammates' % len(teammates))
+                if teammates:
+                    direction = [Message(LineType.MIDDLE, None, None), Message(LineType.TOP, None, None),
+                                 Message(LineType.BOTTOM, None, None)]
+                    index = 0
+                    msgs = []
+                    for i in range(0, len(teammates)):
+                        msgs.append(direction[index])
+                        index += 1
+                        if index >= len(direction):
+                            index = 0
+                    self.log('send %d msgs' % len(msgs))
+                    move.messages = msgs
+
+
+
         else:
             self.log('TICK %s' % world.tick_index)
 
     def move(self, me: Wizard, world: World, game: Game, move: Move):
-        self._init(game, me, world)
+        self._init(game, me, world, move)
 
         # initial cooldown
         if self.PASS_TICK_COUNT:
@@ -142,7 +164,7 @@ class MyStrategy:
         problem_unit = self._find_problem_units(me)
         if problem_unit:
             angle_to_connected_unit = me.get_angle_to_unit(problem_unit)
-            self.log('found connected unit %s (%.4f angle)' % (problem_unit, angle_to_connected_unit))
+            self.log('found connected unit %s (%.4f angle)' % (problem_unit.id, angle_to_connected_unit))
             if angle_to_connected_unit > 0:
                 self.log('run left')
                 move.strafe_speed = -1 * self.G.wizard_strafe_speed
