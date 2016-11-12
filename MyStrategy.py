@@ -1,6 +1,6 @@
 from math import fabs
+import random
 
-from model.LineType import LineType
 from model.ActionType import ActionType
 from model.Game import Game
 from model.Move import Move
@@ -10,6 +10,7 @@ from model.Faction import Faction
 from model.Building import Building
 from model.BuildingType import BuildingType
 from model.Message import Message
+from model.LineType import LineType
 
 
 class MyStrategy:
@@ -21,7 +22,10 @@ class MyStrategy:
 
     LOGS_ENABLE = True
     INITIATED = False
-    WAY_POINTS = list()
+
+    # lint points functionality
+    WAY_POINTS = {}
+    CURRENT_LINE = None
     NEXT_WAYPOINT = 1
     PREV_WAYPOINT = 0
 
@@ -53,50 +57,57 @@ class MyStrategy:
         self.W = world
         self.G = game
         if not self.INITIATED:
-            def compute_waypoints(me, buildings, map_size, friendly_faction):
-                friendly_base = [b for b in buildings
-                                 if b.faction == friendly_faction and b.type == BuildingType.FACTION_BASE][0]
-
-                wps = list()
-                wps.append((me.x, me.y))  # add init point
-
-                # center line
-                wps.append((friendly_base.x + friendly_base.radius + self.FRIENDLY_BASE_OFFSET,
-                            friendly_base.y - friendly_base.radius - self.FRIENDLY_BASE_OFFSET))
-                wps.append((map_size / 2, map_size / 2))
-                wps.append((map_size - friendly_base.x - self.ENEMY_BASE_OFFSET,
-                            map_size - friendly_base.y + self.ENEMY_BASE_OFFSET))
-
-                friendly_base.x = map_size - friendly_base.x
-                friendly_base.y = map_size - friendly_base.y
-                self.ENEMY_BASE = friendly_base
-                del friendly_base
-
-                return wps
-
             self.STAFF_SECTOR = self.G.staff_sector
             self.MAX_SPEED = self.G.wizard_forward_speed * 2
             self.FRIENDLY_FACTION = me.faction
-            self.WAY_POINTS = compute_waypoints(me, self.W.buildings, self.G.map_size, self.FRIENDLY_FACTION)
+            self._compute_waypoints(me)
+            self._send_messages(me, move)
             self.INITIATED = True
-            self.log('init process way points %s' % self.WAY_POINTS)
+            self.log('init process')
 
-            if me.master:
-                teammates = [w for w in self.W.wizards
-                             if w.faction == self.FRIENDLY_FACTION and not w.me]
-                self.log('found %d teammates' % len(teammates))
-                if teammates:
-                    direction = [Message(LineType.MIDDLE, None, None), Message(LineType.TOP, None, None),
-                                 Message(LineType.BOTTOM, None, None)]
-                    index = 0
-                    msgs = []
-                    for i in range(0, len(teammates)):
-                        msgs.append(direction[index])
-                        index += 1
-                        if index >= len(direction):
-                            index = 0
-                    self.log('send %d msgs' % len(msgs))
-                    move.messages = msgs
+    def _send_messages(self, me: Wizard, move: Move):
+        if me.master:
+            teammates = [w for w in self.W.wizards
+                         if w.faction == self.FRIENDLY_FACTION and not w.me]
+            self.log('found %d teammates' % len(teammates))
+            if teammates:
+                direction = [Message(LineType.MIDDLE, None, None), Message(LineType.TOP, None, None),
+                             Message(LineType.BOTTOM, None, None)]
+                index = 0
+                msgs = []
+                for i in range(0, len(teammates)):
+                    msgs.append(direction[index])
+                    index += 1
+                    if index >= len(direction):
+                        index = 0
+                self.log('send %d msgs' % len(msgs))
+                move.messages = msgs
+
+    def _compute_waypoints(self, me: Wizard):
+        map_size = self.G.map_size
+        friendly_base = [b for b in self.W.buildings
+                         if b.faction == self.FRIENDLY_FACTION and b.type == BuildingType.FACTION_BASE][0]
+
+        init_point = (me.x, me.y)
+
+        # top line
+        # bottom line
+
+        # middle line
+        wps = list()
+        wps.append(init_point)
+        wps.append((friendly_base.x + friendly_base.radius + self.FRIENDLY_BASE_OFFSET,
+                    friendly_base.y - friendly_base.radius - self.FRIENDLY_BASE_OFFSET))
+        wps.append((map_size / 2, map_size / 2))
+        wps.append((map_size - friendly_base.x - self.ENEMY_BASE_OFFSET,
+                    map_size - friendly_base.y + self.ENEMY_BASE_OFFSET))
+        self.log('compute middle waypoints %s' % wps)
+        self.WAY_POINTS[LineType.MIDDLE] = wps
+
+        friendly_base.x = map_size - friendly_base.x
+        friendly_base.y = map_size - friendly_base.y
+        self.ENEMY_BASE = friendly_base
+        del friendly_base
 
     def move(self, me: Wizard, world: World, game: Game, move: Move):
         self.log('TICK %s' % world.tick_index)
@@ -107,6 +118,11 @@ class MyStrategy:
             self.PASS_TICK_COUNT -= 1
             self.log('initial cooldown pass turn')
             return
+
+        # select line rush for this battle
+        if not self.CURRENT_LINE:
+            self.CURRENT_LINE = random.choice(list(self.WAY_POINTS.keys()))
+            self.log('select %s line' % self.CURRENT_LINE)
 
         # если ХП мало - стоим или отступаем
         if self._need_retreat(me):
@@ -147,10 +163,10 @@ class MyStrategy:
                 move.action = ActionType.STAFF
 
     def _get_prev_waypoint(self, me: Wizard):
-        wp = self.WAY_POINTS[self.PREV_WAYPOINT]
+        wp = self.WAY_POINTS[self.CURRENT_LINE][self.PREV_WAYPOINT]
         if me.get_distance_to(*wp) < me.radius * 2:
             try:
-                prev_wp = self.WAY_POINTS[self.PREV_WAYPOINT - 1]
+                prev_wp = self.WAY_POINTS[self.CURRENT_LINE][self.PREV_WAYPOINT - 1]
                 self.NEXT_WAYPOINT -= 1
                 self.PREV_WAYPOINT -= 1
                 wp = prev_wp
@@ -159,10 +175,10 @@ class MyStrategy:
         return wp
 
     def _get_next_waypoint(self, me: Wizard):
-        wp = self.WAY_POINTS[self.NEXT_WAYPOINT]
+        wp = self.WAY_POINTS[self.CURRENT_LINE][self.NEXT_WAYPOINT]
         if me.get_distance_to(*wp) < me.radius * 2:
             try:
-                next_wp = self.WAY_POINTS[self.NEXT_WAYPOINT + 1]
+                next_wp = self.WAY_POINTS[self.CURRENT_LINE][self.NEXT_WAYPOINT + 1]
                 self.NEXT_WAYPOINT += 1
                 self.PREV_WAYPOINT += 1
                 wp = next_wp
