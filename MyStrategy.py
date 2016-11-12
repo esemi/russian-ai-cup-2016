@@ -8,6 +8,7 @@ from model.Wizard import Wizard
 from model.World import World
 from model.Faction import Faction
 from model.Building import Building
+from model.BuildingType import BuildingType
 from model.Message import Message
 
 
@@ -24,6 +25,9 @@ class MyStrategy:
     NEXT_WAYPOINT = 1
     PREV_WAYPOINT = 0
 
+    # angle sector of connected units is problem for go
+    PROBLEM_ANGLE = 1.6
+
     # количество тиков, которое мы пропускаем в начале боя
     PASS_TICK_COUNT = 20
 
@@ -31,31 +35,53 @@ class MyStrategy:
     WARNING_DISTANCE_FACTOR = 1.2
 
     # если здоровья меньше данного количества - задумываемся об отступлении
-    LOW_HP_FACTOR = 0.45
+    LOW_HP_FACTOR = 0.5
 
     # максимальное количество врагов в ближней зоне, если больше - нужно сваливать
-    MAX_ENEMIES_IN_STAFF_ZONE = 1
+    MAX_ENEMIES_IN_DANGER_ZONE = 1
+
+    # enemy base offset for last way point on all lines
+    ENEMY_BASE_OFFSET = 660
+
+    # offset of home base for first way point on all line
+    FRIENDLY_BASE_OFFSET = 100
+
+    # pseudo enemy base unit. Use for angle to it when way line ended
+    ENEMY_BASE = None
 
     def _init(self, game: Game, me: Wizard, world: World, move: Move):
         self.W = world
         self.G = game
         if not self.INITIATED:
-            def compute_waypoints(home_x, home_y, map_size):
+            def compute_waypoints(me, buildings, map_size, friendly_faction):
+                friendly_base = [b for b in buildings
+                                 if b.faction == friendly_faction and b.type == BuildingType.FACTION_BASE][0]
+
                 wps = list()
-                wps.append((home_x, home_y))  # add home base
-                wps.append((map_size / 2, map_size / 2))  # center
-                wps.append((map_size - home_x, map_size - home_y))  # add enemy base
+                wps.append((me.x, me.y))  # add init point
+
+                # center line
+                wps.append((friendly_base.x + friendly_base.radius + self.FRIENDLY_BASE_OFFSET,
+                            friendly_base.y - friendly_base.radius - self.FRIENDLY_BASE_OFFSET))
+                wps.append((map_size / 2, map_size / 2))
+                wps.append((map_size - friendly_base.x - self.ENEMY_BASE_OFFSET,
+                            map_size - friendly_base.y + self.ENEMY_BASE_OFFSET))
+
+                friendly_base.x = map_size - friendly_base.x
+                friendly_base.y = map_size - friendly_base.y
+                self.ENEMY_BASE = friendly_base
+                del friendly_base
+
                 return wps
 
-            self.PROBLEM_ANGLE = 1.6
             self.STAFF_SECTOR = self.G.staff_sector
             self.MAX_SPEED = self.G.wizard_forward_speed * 2
             self.FRIENDLY_FACTION = me.faction
-            self.WAY_POINTS = compute_waypoints(me.x, me.y, map_size=self.G.map_size)
+            self.WAY_POINTS = compute_waypoints(me, self.W.buildings, self.G.map_size, self.FRIENDLY_FACTION)
             self.INITIATED = True
             self.log('init process way points %s' % self.WAY_POINTS)
 
-            if me.master or True:
+            if me.master:
                 teammates = [w for w in self.W.wizards
                              if w.faction == self.FRIENDLY_FACTION and not w.me]
                 self.log('found %d teammates' % len(teammates))
@@ -72,12 +98,8 @@ class MyStrategy:
                     self.log('send %d msgs' % len(msgs))
                     move.messages = msgs
 
-
-
-        else:
-            self.log('TICK %s' % world.tick_index)
-
     def move(self, me: Wizard, world: World, game: Game, move: Move):
+        self.log('TICK %s' % world.tick_index)
         self._init(game, me, world, move)
 
         # initial cooldown
@@ -85,11 +107,6 @@ class MyStrategy:
             self.PASS_TICK_COUNT -= 1
             self.log('initial cooldown pass turn')
             return
-
-        # todo
-        #       если у нас мало хп или много врагов в радиусе ближней атаки - двигаемся к предыдущему вейпоинту {strafe_speed, turn, speed}
-        #       иначе - двигаемся к базе врагов {strafe_speed, turn, speed}
-        # есть враги в зоне действия каста - атакуем, крутимся к цели если не находимся в отступлении {turn, action, cast_angle, min_cast_distance}
 
         # если ХП мало - стоим или отступаем
         if self._need_retreat(me):
@@ -150,7 +167,7 @@ class MyStrategy:
                 self.PREV_WAYPOINT += 1
                 wp = next_wp
             except IndexError:
-                pass
+                return None
         return wp
 
     def _find_problem_units(self, me: Wizard):
@@ -160,7 +177,7 @@ class MyStrategy:
         problem_u = [t for t in connected_u if fabs(me.get_angle_to_unit(t)) < self.PROBLEM_ANGLE]
         return None if not problem_u else problem_u[0]
 
-    def _goto(self, coords_tuple, move: Move, me: Wizard):
+    def _goto(self, coords_tuple: (None, tuple), move: Move, me: Wizard):
         problem_unit = self._find_problem_units(me)
         if problem_unit:
             angle_to_connected_unit = me.get_angle_to_unit(problem_unit)
@@ -172,9 +189,14 @@ class MyStrategy:
                 self.log('run right')
                 move.strafe_speed = self.G.wizard_strafe_speed
         else:
+            turn_only = False
+            if coords_tuple is None:
+                turn_only = True
+                coords_tuple = (self.ENEMY_BASE.x, self.ENEMY_BASE.y)
             angle = me.get_angle_to(*coords_tuple)
             move.turn = angle
-            if fabs(angle) < self.STAFF_SECTOR / 4.0:
+
+            if fabs(angle) < self.STAFF_SECTOR / 4.0 and not turn_only:
                 move.speed = self.MAX_SPEED
 
     def _select_enemy_for_attack(self, me: Wizard, enemy_targets: list):
@@ -232,7 +254,8 @@ class MyStrategy:
 
     def _need_retreat(self, me: Wizard):
         enemies_in_staff_zone = self._enemies_in_staff_distance(me)
-        return me.life < me.max_life * self.LOW_HP_FACTOR or len(enemies_in_staff_zone) > self.MAX_ENEMIES_IN_STAFF_ZONE
+        return (me.life < me.max_life * self.LOW_HP_FACTOR or
+                len(enemies_in_staff_zone) > self.MAX_ENEMIES_IN_DANGER_ZONE)
 
     def _get_enemies(self):
         all_targets = self.W.buildings + self.W.wizards + self.W.minions
