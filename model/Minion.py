@@ -1,6 +1,6 @@
-from .Faction import Faction
-from .LivingUnit import LivingUnit
-from .MinionType import MinionType
+from model.Faction import Faction
+from model.LivingUnit import LivingUnit
+from model.MinionType import MinionType
 
 
 class Minion(LivingUnit):

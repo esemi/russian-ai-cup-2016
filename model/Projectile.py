@@ -1,6 +1,6 @@
-from .CircularUnit import CircularUnit
-from .Faction import Faction
-from .ProjectileType import ProjectileType
+from model.CircularUnit import CircularUnit
+from model.Faction import Faction
+from model.ProjectileType import ProjectileType
 
 
 class Projectile(CircularUnit):

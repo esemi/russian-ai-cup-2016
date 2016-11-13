@@ -1,5 +1,5 @@
-from .CircularUnit import CircularUnit
-from .Faction import Faction
+from model.CircularUnit import CircularUnit
+from model.Faction import Faction
 
 
 class LivingUnit(CircularUnit):

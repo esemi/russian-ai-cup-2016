@@ -1,6 +1,6 @@
-from .BonusType import BonusType
-from .CircularUnit import CircularUnit
-from .Faction import Faction
+from model.BonusType import BonusType
+from model.CircularUnit import CircularUnit
+from model.Faction import Faction
 
 
 class Bonus(CircularUnit):

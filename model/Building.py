@@ -1,6 +1,6 @@
-from .BuildingType import BuildingType
-from .Faction import Faction
-from .LivingUnit import LivingUnit
+from model.BuildingType import BuildingType
+from model.Faction import Faction
+from model.LivingUnit import LivingUnit
 
 
 class Building(LivingUnit):
