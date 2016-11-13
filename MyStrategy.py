@@ -10,7 +10,7 @@ from model.Faction import Faction
 from model.Building import Building
 from model.BuildingType import BuildingType
 from model.Message import Message
-from model.LineType import LineType
+from model.LaneType import LaneType
 
 
 class MyStrategy:
@@ -71,8 +71,8 @@ class MyStrategy:
                          if w.faction == self.FRIENDLY_FACTION and not w.me]
             self.log('found %d teammates' % len(teammates))
             if teammates:
-                direction = [Message(LineType.MIDDLE, None, None), Message(LineType.TOP, None, None),
-                             Message(LineType.BOTTOM, None, None)]
+                direction = [Message(LaneType.MIDDLE, None, None), Message(LaneType.TOP, None, None),
+                             Message(LaneType.BOTTOM, None, None)]
                 index = 0
                 msgs = []
                 for i in range(0, len(teammates)):
@@ -98,7 +98,7 @@ class MyStrategy:
         wps.append((map_size - me.x - self.ENEMY_BASE_OFFSET,
                     map_size - me.y - 30))
         self.log('compute top waypoints %s' % wps)
-        self.WAY_POINTS[LineType.TOP] = wps
+        self.WAY_POINTS[LaneType.TOP] = wps
 
         # bottom line
         # wps = list()
@@ -117,7 +117,7 @@ class MyStrategy:
         wps.append((map_size - friendly_base.x - self.ENEMY_BASE_OFFSET,
                     map_size - friendly_base.y + self.ENEMY_BASE_OFFSET))
         self.log('compute middle waypoints %s' % wps)
-        self.WAY_POINTS[LineType.MIDDLE] = wps
+        self.WAY_POINTS[LaneType.MIDDLE] = wps
 
         friendly_base.x = map_size - friendly_base.x
         friendly_base.y = map_size - friendly_base.y
