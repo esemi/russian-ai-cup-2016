@@ -28,6 +28,12 @@ class MyStrategy:
     CURRENT_LINE = None
     NEXT_WAYPOINT = 1
     PREV_WAYPOINT = 0
+    # enemy base offset for last way point on all lines
+    ENEMY_BASE_OFFSET = 660
+    # offset of home base for first way point on all line
+    FRIENDLY_BASE_OFFSET = 100
+    # offset of home base for first way point on all line
+    MAP_ANGLE_OFFSET = 600
 
     # angle sector of connected units is problem for go
     PROBLEM_ANGLE = 1.6
@@ -43,12 +49,6 @@ class MyStrategy:
 
     # максимальное количество врагов в ближней зоне, если больше - нужно сваливать
     MAX_ENEMIES_IN_DANGER_ZONE = 1
-
-    # enemy base offset for last way point on all lines
-    ENEMY_BASE_OFFSET = 660
-
-    # offset of home base for first way point on all line
-    FRIENDLY_BASE_OFFSET = 100
 
     # pseudo enemy base unit. Use for angle to it when way line ended
     ENEMY_BASE = None
@@ -91,13 +91,28 @@ class MyStrategy:
         init_point = (me.x, me.y)
 
         # top line
+        wps = list()
+        wps.append(init_point)
+        wps.append((me.x, me.x + self.MAP_ANGLE_OFFSET))
+        wps.append((me.x + self.MAP_ANGLE_OFFSET, me.x))
+        wps.append((map_size - me.x - self.ENEMY_BASE_OFFSET,
+                    map_size - me.y - 30))
+        self.log('compute top waypoints %s' % wps)
+        self.WAY_POINTS[LineType.TOP] = wps
+
         # bottom line
+        # wps = list()
+        # wps.append(init_point)
+        # wps.append((me.x, me.x + self.MAP_ANGLE_OFFSET))
+        # wps.append((me.x + self.MAP_ANGLE_OFFSET, me.x))
+        # wps.append((map_size - me.x - self.ENEMY_BASE_OFFSET,
+        #             map_size - me.y - 30))
+        # self.log('compute bottom waypoints %s' % wps)
+        # self.WAY_POINTS[LineType.BOTTOM] = wps
 
         # middle line
         wps = list()
         wps.append(init_point)
-        wps.append((friendly_base.x + friendly_base.radius + self.FRIENDLY_BASE_OFFSET,
-                    friendly_base.y - friendly_base.radius - self.FRIENDLY_BASE_OFFSET))
         wps.append((map_size / 2, map_size / 2))
         wps.append((map_size - friendly_base.x - self.ENEMY_BASE_OFFSET,
                     map_size - friendly_base.y + self.ENEMY_BASE_OFFSET))
@@ -120,7 +135,7 @@ class MyStrategy:
             return
 
         # select line rush for this battle
-        if not self.CURRENT_LINE:
+        if self.CURRENT_LINE is None:
             self.CURRENT_LINE = random.choice(list(self.WAY_POINTS.keys()))
             self.log('select %s line' % self.CURRENT_LINE)
 
