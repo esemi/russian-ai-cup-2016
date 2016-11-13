@@ -1,4 +1,4 @@
-from .StatusType import StatusType
+from model.StatusType import StatusType
 
 
 class Status:

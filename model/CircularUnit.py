@@ -1,5 +1,5 @@
-from .Faction import Faction
-from .Unit import Unit
+from model.Faction import Faction
+from model.Unit import Unit
 
 
 class CircularUnit(Unit):

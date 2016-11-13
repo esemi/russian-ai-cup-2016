@@ -1,4 +1,4 @@
-from .World import World
+from model.World import World
 
 
 class PlayerContext:

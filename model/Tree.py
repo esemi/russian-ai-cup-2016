@@ -1,5 +1,5 @@
-from .Faction import Faction
-from .LivingUnit import LivingUnit
+from model.Faction import Faction
+from model.LivingUnit import LivingUnit
 
 
 class Tree(LivingUnit):

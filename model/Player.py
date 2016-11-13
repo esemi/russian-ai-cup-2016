@@ -1,4 +1,4 @@
-from .Faction import Faction
+from model.Faction import Faction
 
 
 class Player:
