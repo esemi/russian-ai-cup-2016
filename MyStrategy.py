@@ -5,8 +5,10 @@ import random
 from model.ActionType import ActionType
 from model.LivingUnit import LivingUnit
 from model.Game import Game
+from model.MinionType import MinionType
 from model.Move import Move
 from model.Wizard import Wizard
+from model.Minion import Minion
 from model.World import World
 from model.Faction import Faction
 from model.Building import Building
@@ -43,9 +45,6 @@ class MyStrategy:
 
     # количество тиков, которое мы пропускаем в начале боя
     PASS_TICK_COUNT = 30
-
-    # фактор для расстояния выстрела, используется для отступления на минимально необходимое расстояние
-    WARNING_DISTANCE_FACTOR = 1.2
 
     # если здоровья меньше данного количества - задумываемся об отступлении
     LOW_HP_FACTOR = 0.5
@@ -154,7 +153,7 @@ class MyStrategy:
         # если ХП мало - стоим или отступаем
         if self._need_retreat(me):
             self.log('retreat')
-            if self._enemies_in_warning_distance_count(me):
+            if self._enemies_who_can_attack_me(me):
                 self.log('retreat to home by low HP and enemies in attack range')
                 self._goto(self._get_prev_waypoint(me), move, me)
             return
@@ -312,13 +311,6 @@ class MyStrategy:
         enemy_targets = [t for t in all_targets if t.faction not in [self.FRIENDLY_FACTION, Faction.NEUTRAL]]
         return enemy_targets
 
-    def _enemies_in_warning_distance_count(self, me: Wizard):
-        enemies = self._get_enemies()
-        danger_enemies = [e for e in enemies
-                          if self._cast_range(me, e) < me.cast_range * self.WARNING_DISTANCE_FACTOR]
-        self.log('found %d enemies in warning zone' % len(danger_enemies))
-        return len(danger_enemies) > 0
-
     def _enemies_in_attack_distance(self, me: Wizard):
         enemies = self._get_enemies()
         danger_enemies = [e for e in enemies
@@ -329,6 +321,23 @@ class MyStrategy:
     def _enemies_in_staff_distance(self, me: Wizard):
         enemies = self._get_enemies()
         danger_enemies = [e for e in enemies if self._enemy_in_staff_distance(me, e)]
+        return danger_enemies
+
+    def _enemies_who_can_attack_me(self, me: Wizard):
+        danger_enemies = []
+        for e in self._get_enemies():
+            attack_distance = 0
+            if isinstance(e, Building):
+                attack_distance = e.attack_range
+            elif isinstance(e, Wizard):
+                attack_distance = self._cast_distance(e, me)
+            elif isinstance(e, Minion) and e.type == MinionType.FETISH_BLOWDART:
+                attack_distance = self.G.fetish_blowdart_attack_range
+            elif isinstance(e, Minion) and e.type == MinionType.ORC_WOODCUTTER:
+                attack_distance = self.G.orc_woodcutter_attack_range * 1.2
+
+            if me.get_distance_to_unit(e) <= attack_distance:
+                danger_enemies.append(e)
         self.log('found %d enemies in staff zone' % len(danger_enemies))
         return danger_enemies
 
@@ -336,11 +345,10 @@ class MyStrategy:
         return me.get_distance_to_unit(e) <= (self.G.staff_range + e.radius)
 
     def _enemy_in_cast_distance(self, me: Wizard, e: LivingUnit):
-        return self._cast_range(me, e) < me.cast_range and not self._enemy_in_staff_distance(me, e)
+        return self._cast_distance(me, e) < me.cast_range and not self._enemy_in_staff_distance(me, e)
 
-    @staticmethod
-    def _cast_range(me: Wizard, e: LivingUnit):
-        projectile_radius = 10
+    def _cast_distance(self, me: Wizard, e: LivingUnit):
+        projectile_radius = self.G.magic_missile_radius
         return me.get_distance_to_unit(e) - e.radius - projectile_radius
 
     def _enemy_in_attack_sector(self, me: Wizard, e):
