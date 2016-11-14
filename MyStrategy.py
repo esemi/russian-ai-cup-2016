@@ -3,6 +3,7 @@ from copy import copy
 import random
 
 from model.ActionType import ActionType
+from model.LivingUnit import LivingUnit
 from model.Game import Game
 from model.Move import Move
 from model.Wizard import Wizard
@@ -314,7 +315,7 @@ class MyStrategy:
     def _enemies_in_warning_distance_count(self, me: Wizard):
         enemies = self._get_enemies()
         danger_enemies = [e for e in enemies
-                          if me.get_distance_to_unit(e) <= me.cast_range * self.WARNING_DISTANCE_FACTOR]
+                          if self._cast_range(me, e) < me.cast_range * self.WARNING_DISTANCE_FACTOR]
         self.log('found %d enemies in warning zone' % len(danger_enemies))
         return len(danger_enemies) > 0
 
@@ -334,8 +335,13 @@ class MyStrategy:
     def _enemy_in_staff_distance(self, me: Wizard, e):
         return me.get_distance_to_unit(e) <= (self.G.staff_range + e.radius)
 
-    def _enemy_in_cast_distance(self, me: Wizard, e):
-        return me.get_distance_to_unit(e) <= me.cast_range and not self._enemy_in_staff_distance(me, e)
+    def _enemy_in_cast_distance(self, me: Wizard, e: LivingUnit):
+        return self._cast_range(me, e) < me.cast_range and not self._enemy_in_staff_distance(me, e)
+
+    @staticmethod
+    def _cast_range(me: Wizard, e: LivingUnit):
+        projectile_radius = 10
+        return me.get_distance_to_unit(e) - e.radius - projectile_radius
 
     def _enemy_in_attack_sector(self, me: Wizard, e):
         return fabs(me.get_angle_to_unit(e)) <= self.STAFF_SECTOR / 2.0
