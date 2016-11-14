@@ -1,4 +1,5 @@
 from math import fabs
+from copy import copy
 import random
 
 from model.ActionType import ActionType
@@ -25,9 +26,10 @@ class MyStrategy:
 
     # lint points functionality
     WAY_POINTS = {}
-    CURRENT_LINE = None
+    CURRENT_LINE = LaneType.MIDDLE
     NEXT_WAYPOINT = 1
     PREV_WAYPOINT = 0
+
     # enemy base offset for last way point on all lines
     ENEMY_BASE_OFFSET = 660
     # offset of home base for first way point on all line
@@ -39,7 +41,7 @@ class MyStrategy:
     PROBLEM_ANGLE = 1.6
 
     # количество тиков, которое мы пропускаем в начале боя
-    PASS_TICK_COUNT = 20
+    PASS_TICK_COUNT = 30
 
     # фактор для расстояния выстрела, используется для отступления на минимально необходимое расстояние
     WARNING_DISTANCE_FACTOR = 1.2
@@ -93,22 +95,24 @@ class MyStrategy:
         # top line
         wps = list()
         wps.append(init_point)
+        wps.append((min(me.x - 20, 0), me.y - 100))
         wps.append((me.x, me.x + self.MAP_ANGLE_OFFSET))
         wps.append((me.x + self.MAP_ANGLE_OFFSET, me.x))
-        wps.append((map_size - me.x - self.ENEMY_BASE_OFFSET,
+        wps.append((map_size - friendly_base.x - self.ENEMY_BASE_OFFSET - 20,
                     map_size - me.y - 30))
         self.log('compute top waypoints %s' % wps)
         self.WAY_POINTS[LaneType.TOP] = wps
 
         # bottom line
-        # wps = list()
-        # wps.append(init_point)
-        # wps.append((me.x, me.x + self.MAP_ANGLE_OFFSET))
-        # wps.append((me.x + self.MAP_ANGLE_OFFSET, me.x))
-        # wps.append((map_size - me.x - self.ENEMY_BASE_OFFSET,
-        #             map_size - me.y - 30))
-        # self.log('compute bottom waypoints %s' % wps)
-        # self.WAY_POINTS[LineType.BOTTOM] = wps
+        wps = list()
+        wps.append(init_point)
+        wps.append((me.x + 100, max(me.y + 20, map_size)))
+        wps.append((map_size - me.x - self.MAP_ANGLE_OFFSET, me.y))
+        wps.append((map_size - me.x, me.y - self.MAP_ANGLE_OFFSET))
+        wps.append((map_size - me.x - 30,
+                    map_size - friendly_base.y - self.ENEMY_BASE_OFFSET - 20))
+        self.log('compute bottom waypoints %s' % wps)
+        self.WAY_POINTS[LaneType.BOTTOM] = wps
 
         # middle line
         wps = list()
@@ -119,10 +123,9 @@ class MyStrategy:
         self.log('compute middle waypoints %s' % wps)
         self.WAY_POINTS[LaneType.MIDDLE] = wps
 
-        friendly_base.x = map_size - friendly_base.x
-        friendly_base.y = map_size - friendly_base.y
-        self.ENEMY_BASE = friendly_base
-        del friendly_base
+        self.ENEMY_BASE = copy(friendly_base)
+        self.ENEMY_BASE.x = map_size - self.ENEMY_BASE.x
+        self.ENEMY_BASE.y = map_size - self.ENEMY_BASE.y
 
     def move(self, me: Wizard, world: World, game: Game, move: Move):
         self.log('TICK %s' % world.tick_index)
@@ -138,6 +141,14 @@ class MyStrategy:
         if self.CURRENT_LINE is None:
             self.CURRENT_LINE = random.choice(list(self.WAY_POINTS.keys()))
             self.log('select %s line' % self.CURRENT_LINE)
+
+        # if die crutch
+        # если находимся в досягаемости нашей первой точкт (инит поинт)
+        # то нужно принудительно скипнуть индексе вейпоинтов
+        if self._near_begin_waypoint(me):
+            self.log('skip waypoint indexes')
+            self.NEXT_WAYPOINT = 1
+            self.PREV_WAYPOINT = 0
 
         # если ХП мало - стоим или отступаем
         if self._need_retreat(me):
@@ -179,7 +190,7 @@ class MyStrategy:
 
     def _get_prev_waypoint(self, me: Wizard):
         wp = self.WAY_POINTS[self.CURRENT_LINE][self.PREV_WAYPOINT]
-        if me.get_distance_to(*wp) < me.radius * 2:
+        if self._near_waypoint(me, wp):
             try:
                 prev_wp = self.WAY_POINTS[self.CURRENT_LINE][self.PREV_WAYPOINT - 1]
                 self.NEXT_WAYPOINT -= 1
@@ -189,9 +200,16 @@ class MyStrategy:
                 pass
         return wp
 
+    @staticmethod
+    def _near_waypoint(me: Wizard, wp_coords):
+        return me.get_distance_to(*wp_coords) < me.radius * 2
+
+    def _near_begin_waypoint(self, me: Wizard):
+        return self._near_waypoint(me, self.WAY_POINTS[self.CURRENT_LINE][0])
+
     def _get_next_waypoint(self, me: Wizard):
         wp = self.WAY_POINTS[self.CURRENT_LINE][self.NEXT_WAYPOINT]
-        if me.get_distance_to(*wp) < me.radius * 2:
+        if self._near_waypoint(me, wp):
             try:
                 next_wp = self.WAY_POINTS[self.CURRENT_LINE][self.NEXT_WAYPOINT + 1]
                 self.NEXT_WAYPOINT += 1
