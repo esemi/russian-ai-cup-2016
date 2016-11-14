@@ -321,24 +321,27 @@ class MyStrategy:
     def _enemies_in_staff_distance(self, me: Wizard):
         enemies = self._get_enemies()
         danger_enemies = [e for e in enemies if self._enemy_in_staff_distance(me, e)]
+        self.log('found %d enemy in staff zone' % len(danger_enemies))
         return danger_enemies
 
     def _enemies_who_can_attack_me(self, me: Wizard):
         danger_enemies = []
         for e in self._get_enemies():
-            attack_distance = 0
+            distance_to_me = e.get_distance_to_unit(me)
+            attack_range = 0
             if isinstance(e, Building):
-                attack_distance = e.attack_range
+                attack_range = e.attack_range
             elif isinstance(e, Wizard):
-                attack_distance = self._cast_distance(e, me)
+                attack_range = e.cast_range
+                distance_to_me = self._cast_distance(e, me)
             elif isinstance(e, Minion) and e.type == MinionType.FETISH_BLOWDART:
-                attack_distance = self.G.fetish_blowdart_attack_range
-            elif isinstance(e, Minion) and e.type == MinionType.ORC_WOODCUTTER:
-                attack_distance = self.G.orc_woodcutter_attack_range * 1.2
+                attack_range = self.G.fetish_blowdart_attack_range
+            elif isinstance(e, Minion) and e.type == MinionType.ORC_WOODCUTTER * 1.2:
+                attack_range = self.G.orc_woodcutter_attack_range
 
-            if me.get_distance_to_unit(e) <= attack_distance:
+            if distance_to_me <= attack_range:
                 danger_enemies.append(e)
-        self.log('found %d enemies in staff zone' % len(danger_enemies))
+        self.log('found %d enemies who can attack me' % len(danger_enemies))
         return danger_enemies
 
     def _enemy_in_staff_distance(self, me: Wizard, e):
