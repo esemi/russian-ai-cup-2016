@@ -29,7 +29,7 @@ class MyStrategy:
 
     # lint points functionality
     WAY_POINTS = {}
-    CURRENT_LINE = LaneType.MIDDLE
+    CURRENT_LINE = None
     NEXT_WAYPOINT = 1
     PREV_WAYPOINT = 0
 
@@ -107,11 +107,13 @@ class MyStrategy:
         # bottom line
         wps = list()
         wps.append(init_point)
-        wps.append((me.x + 100, max(me.y + 20, map_size)))
-        wps.append((map_size - me.x - self.MAP_ANGLE_OFFSET, me.y))
-        wps.append((map_size - me.x, me.y - self.MAP_ANGLE_OFFSET))
-        wps.append((map_size - me.x - 30,
-                    map_size - friendly_base.y - self.ENEMY_BASE_OFFSET - 20))
+        wps.append((1200, 3800))
+        wps.append((2300, 3800))
+        wps.append((3200, 3800))
+        wps.append((3550, 3550))
+        wps.append((3800, 3200))
+        wps.append((3800, 2300))
+        wps.append((3750, 1200))
         self.log('compute bottom waypoints %s' % wps)
         self.WAY_POINTS[LaneType.BOTTOM] = wps
 
