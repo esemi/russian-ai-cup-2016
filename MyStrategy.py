@@ -185,9 +185,7 @@ class MyStrategy:
             if self._enemy_in_cast_distance(me, selected_enemy):
                 self.log('cast attack')
                 move.action = ActionType.MAGIC_MISSILE
-                move.min_cast_distance = (me.get_distance_to_unit(selected_enemy) -
-                                          selected_enemy.radius +
-                                          self.G.magic_missile_radius)
+                move.min_cast_distance = (self._cast_distance(me, selected_enemy))
             else:
                 self.log('staff attack')
                 move.action = ActionType.STAFF
