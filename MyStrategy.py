@@ -150,6 +150,11 @@ class MyStrategy:
         if self.CURRENT_LINE is None:
             self.CURRENT_LINE = random.choice(list(self.WAY_POINTS.keys()))
             self.log('select %s line' % self.CURRENT_LINE)
+            if me.messages:
+                m = me.messages.pop()
+                if m in list(self.WAY_POINTS.keys()):
+                    self.CURRENT_LINE = m
+                    self.log('select %s line by message' % self.CURRENT_LINE)
 
         # if die crutch
         # если находимся в досягаемости нашей первой точкт (инит поинт)
