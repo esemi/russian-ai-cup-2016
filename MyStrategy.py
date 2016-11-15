@@ -118,9 +118,9 @@ class MyStrategy:
         # middle line
         wps = list()
         wps.append(init_point)
-        wps.append((map_size / 2, map_size / 2))
-        wps.append((map_size - friendly_base.x - self.ENEMY_BASE_OFFSET,
-                    map_size - friendly_base.y + self.ENEMY_BASE_OFFSET))
+        wps.append((1050, 2850))
+        wps.append((1800, 2120))
+        wps.append((2940.0, 1060.0))
         self.log('compute middle waypoints %s' % wps)
         self.WAY_POINTS[LaneType.MIDDLE] = wps
 
