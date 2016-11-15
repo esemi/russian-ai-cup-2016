@@ -37,7 +37,7 @@ class MyStrategy:
     ENEMY_BASE_OFFSET = 660
     # offset of home base for first way point on all line
     FRIENDLY_BASE_OFFSET = 100
-    # offset of home base for first way point on all line
+    # offset of map angle
     MAP_ANGLE_OFFSET = 600
 
     # angle sector of connected units is problem for go
@@ -89,17 +89,18 @@ class MyStrategy:
         map_size = self.G.map_size
         friendly_base = [b for b in self.W.buildings
                          if b.faction == self.FRIENDLY_FACTION and b.type == BuildingType.FACTION_BASE][0]
-
         init_point = (me.x, me.y)
 
         # top line
         wps = list()
         wps.append(init_point)
-        wps.append((min(me.x - 20, 0), me.y - 100))
-        wps.append((me.x, me.x + self.MAP_ANGLE_OFFSET))
-        wps.append((me.x + self.MAP_ANGLE_OFFSET, me.x))
-        wps.append((map_size - friendly_base.x - self.ENEMY_BASE_OFFSET - 20,
-                    map_size - me.y - 30))
+        wps.append((200, 2700))
+        wps.append((200, 1700))
+        wps.append((200, 800))
+        wps.append((450, 450))
+        wps.append((800, 180))
+        wps.append((1700, 180))
+        wps.append((2800, 150))
         self.log('compute top waypoints %s' % wps)
         self.WAY_POINTS[LaneType.TOP] = wps
 
@@ -129,6 +130,7 @@ class MyStrategy:
 
     def move(self, me: Wizard, world: World, game: Game, move: Move):
         self.log('TICK %s' % world.tick_index)
+        self.log('me %s %s' % (me.x, me.y))
         self._init(game, me, world, move)
 
         # initial cooldown
@@ -327,7 +329,7 @@ class MyStrategy:
     def _enemies_who_can_attack_me(self, me: Wizard):
         danger_enemies = []
         for e in self._get_enemies():
-            distance_to_me = e.get_distance_to_unit(me)
+            distance_to_me = e.get_distance_to_unit(me) - me.radius
             attack_range = 0
             if isinstance(e, Building):
                 attack_range = e.attack_range
@@ -336,8 +338,8 @@ class MyStrategy:
                 distance_to_me = self._cast_distance(e, me)
             elif isinstance(e, Minion) and e.type == MinionType.FETISH_BLOWDART:
                 attack_range = self.G.fetish_blowdart_attack_range
-            elif isinstance(e, Minion) and e.type == MinionType.ORC_WOODCUTTER * 1.2:
-                attack_range = self.G.orc_woodcutter_attack_range
+            elif isinstance(e, Minion) and e.type == MinionType.ORC_WOODCUTTER:
+                attack_range = self.G.orc_woodcutter_attack_range * 1.2
 
             if distance_to_me <= attack_range:
                 danger_enemies.append(e)
