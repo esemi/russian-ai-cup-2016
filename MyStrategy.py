@@ -27,7 +27,7 @@ class MyStrategy:
     LOGS_ENABLE = True
     INITIATED = False
 
-    # lint points functionality
+    # waypoints functionality
     WAY_POINTS = {}
     CURRENT_LINE = None
     NEXT_WAYPOINT = 1
@@ -289,15 +289,19 @@ class MyStrategy:
                 self.log('found enemies in attack sector %d' % len(enemies_in_sector))
                 enemies_can_attack_now = _filter_can_attack_now(enemies_in_sector)
                 if enemies_can_attack_now:
-                    e = _sort_by_hp(enemies_can_attack_now)[0]
+                    wizards = [e for e in enemies_can_attack_now if isinstance(e, Wizard)]
+                    if wizards:
+                        e = _sort_by_hp(wizards)[0]
+                    else:
+                        e = _sort_by_hp(enemies_can_attack_now)[0]
                     self.log('select enemy for attack now by HP %s' % e.id)
                 else:
                     e = _sort_by_distance(enemies_in_sector)[0]
                     self.log('select nearest enemy for delayed attack (turn now) %s' % e.id)
 
-            else:  # если таких нет - ищем ближайшего по углу
+            else:  # если таких нет - ищем самого слабого
                 self.log('all living enemies not in attack sector')
-                e = _sort_by_angle(living_units)[0]
+                e = _sort_by_hp(living_units)[0]
                 self.log('select enemy for turn %s' % e.id)
 
         else:  # если никого кроме зданий во врагах нет - мочим самое слабое здание
