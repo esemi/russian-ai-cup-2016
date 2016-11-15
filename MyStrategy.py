@@ -27,6 +27,11 @@ class MyStrategy:
     LOGS_ENABLE = True
     INITIATED = False
 
+    # attack strafe move
+    ATTACK_STRAFE_LIMIT = 10
+    ATTACK_STRAFE_MOD = -1
+    ATTACK_STRAFE_COUNTER = 0
+
     # waypoints functionality
     WAY_POINTS = {}
     CURRENT_LINE = None
@@ -173,6 +178,13 @@ class MyStrategy:
         self.log('found %d enemies for attack' % len(enemy_targets))
         selected_enemy = self._select_enemy_for_attack(me, enemy_targets)
         angle_to_enemy = me.get_angle_to_unit(selected_enemy)
+
+        # ходим в стороны при атаке
+        if fabs(self.ATTACK_STRAFE_COUNTER) >= self.ATTACK_STRAFE_LIMIT:
+            self.ATTACK_STRAFE_MOD *= -1
+        self.ATTACK_STRAFE_COUNTER += self.ATTACK_STRAFE_MOD
+        self.log('strafe move for attack %d %d' % (self.ATTACK_STRAFE_COUNTER, self.ATTACK_STRAFE_MOD))
+        move.strafe_speed = self.ATTACK_STRAFE_MOD * self.G.wizard_strafe_speed
 
         # если цель не в секторе атаки - поворачиваемся к ней
         if not self._enemy_in_attack_sector(me, selected_enemy):
