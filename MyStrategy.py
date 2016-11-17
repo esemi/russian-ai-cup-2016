@@ -1,4 +1,4 @@
-from math import fabs
+from math import fabs, radians
 from copy import copy
 import random
 
@@ -38,6 +38,11 @@ class MyStrategy:
     NEXT_WAYPOINT = 1
     PREV_WAYPOINT = 0
 
+    # move constants
+    MOVE_TURN = None
+    MOVE_STRAFE_SPEED = None
+    MOVE_SPEED = None
+
     # enemy base offset for last way point on all lines
     ENEMY_BASE_OFFSET = 660
     # offset of home base for first way point on all line
@@ -46,13 +51,13 @@ class MyStrategy:
     MAP_ANGLE_OFFSET = 600
 
     # angle sector of connected units is problem for go
-    PROBLEM_ANGLE = 1.6
+    PROBLEM_ANGLE = radians(90)
 
     # количество тиков, которое мы пропускаем в начале боя
     PASS_TICK_COUNT = 30
 
     # если здоровья меньше данного количества - задумываемся об отступлении
-    LOW_HP_FACTOR = 0.5
+    LOW_HP_FACTOR = 0.3
 
     # максимальное количество врагов в ближней зоне, если больше - нужно сваливать
     MAX_ENEMIES_IN_DANGER_ZONE = 1
@@ -164,48 +169,70 @@ class MyStrategy:
             self.NEXT_WAYPOINT = 1
             self.PREV_WAYPOINT = 0
 
-        # если ХП мало - стоим или отступаем
-        if self._need_retreat(me):
-            self.log('retreat')
-            if self._enemies_who_can_attack_me(me):
-                self.log('retreat to home by low HP and enemies in attack range')
-                self._goto(self._get_prev_waypoint(me), move, me)
-            return
-
-        # если врагов в радиусе обстрела нет - идём к их базе
+        # STRATEGY LOGIC
         enemy_targets = self._enemies_in_attack_distance(me)
-        if not enemy_targets:
+        enemy_who_can_attack_me = self._enemies_who_can_attack_me(me)
+        retreat_move_lock = False
+
+        # если ХП мало отступаем
+        if me.life < me.max_life * self.LOW_HP_FACTOR:
+            self.log('retreat by low HP')
+            if len(enemy_who_can_attack_me):
+                self._goto_backward(me)
+                retreat_move_lock = True
+
+        if len(enemy_who_can_attack_me) > self.MAX_ENEMIES_IN_DANGER_ZONE:
+            self.log('retreat by enemies in danger zone')
+            self._goto_backward(me)
+            retreat_move_lock = True
+
+        # если врагов в радиусе обстрела нет - идём к их базе если не находимся в режиме отступления
+        if not enemy_targets and not retreat_move_lock:
             self.log('move to next waypoint')
-            self._goto(self._get_next_waypoint(me), move, me)
-            return
+            self._goto_forward(me)
 
-        # есть враги в радиусе обстрела
-        self.log('found %d enemies for attack' % len(enemy_targets))
-        selected_enemy = self._select_enemy_for_attack(me, enemy_targets)
-        angle_to_enemy = me.get_angle_to_unit(selected_enemy)
+        if enemy_targets:
+            # есть враги в радиусе обстрела
+            self.log('found %d enemies for attack' % len(enemy_targets))
+            selected_enemy = self._select_enemy_for_attack(me, enemy_targets)
+            angle_to_enemy = me.get_angle_to_unit(selected_enemy)
 
-        # ходим в стороны при атаке
-        if fabs(self.ATTACK_STRAFE_COUNTER) >= self.ATTACK_STRAFE_LIMIT:
-            self.ATTACK_STRAFE_MOD *= -1
-        self.ATTACK_STRAFE_COUNTER += self.ATTACK_STRAFE_MOD
-        self.log('strafe move for attack %d %d' % (self.ATTACK_STRAFE_COUNTER, self.ATTACK_STRAFE_MOD))
-        move.strafe_speed = self.ATTACK_STRAFE_MOD * self.G.wizard_strafe_speed
+            # ходим в стороны при атаке (приоритет за обходом препятствий при отступлении)
+            if not retreat_move_lock:
+                if fabs(self.ATTACK_STRAFE_COUNTER) >= self.ATTACK_STRAFE_LIMIT:
+                    self.ATTACK_STRAFE_MOD *= -1
+                self.ATTACK_STRAFE_COUNTER += self.ATTACK_STRAFE_MOD
+                self.log('strafe move for attack %d %d' % (self.ATTACK_STRAFE_COUNTER, self.ATTACK_STRAFE_MOD))
+                self.MOVE_STRAFE_SPEED = self.ATTACK_STRAFE_MOD * self.G.wizard_strafe_speed
 
-        # если цель не в секторе атаки - поворачиваемся к ней
-        if not self._enemy_in_attack_sector(me, selected_enemy):
-            self.log('select enemy for turn %s' % selected_enemy.id)
-            move.turn = angle_to_enemy
-        else:
-            # если можем атаковать - атакуем
-            self.log('select enemy for attack %s' % selected_enemy.id)
-            move.cast_angle = angle_to_enemy
-            if self._enemy_in_cast_distance(me, selected_enemy):
-                self.log('cast attack')
-                move.action = ActionType.MAGIC_MISSILE
-                move.min_cast_distance = (self._cast_distance(me, selected_enemy))
+            # если цель не в секторе атаки - поворачиваемся к ней (приоритет за направлением на точку отступления)
+            if not self._enemy_in_attack_sector(me, selected_enemy):
+                if not retreat_move_lock:
+                    self.log('select enemy for turn %s' % selected_enemy.id)
+                    self.MOVE_TURN = angle_to_enemy
+                else:
+                    self.log('ignore select enemy for turn %s by retreat' % selected_enemy.id)
             else:
-                self.log('staff attack')
-                move.action = ActionType.STAFF
+                # если можем атаковать - атакуем
+                self.log('select enemy for attack %s' % selected_enemy.id)
+                move.cast_angle = angle_to_enemy
+                if self._enemy_in_cast_distance(me, selected_enemy):
+                    self.log('cast attack')
+                    move.action = ActionType.MAGIC_MISSILE
+                    move.min_cast_distance = self._cast_distance(me, selected_enemy)
+                else:
+                    self.log('staff attack')
+                    move.action = ActionType.STAFF
+
+        if self.MOVE_TURN is not None:
+            move.turn = self.MOVE_TURN
+            self.MOVE_TURN = None
+        if self.MOVE_SPEED is not None:
+            move.speed = self.MOVE_SPEED
+            self.MOVE_SPEED = None
+        if self.MOVE_STRAFE_SPEED is not None:
+            move.strafe_speed = self.MOVE_STRAFE_SPEED
+            self.MOVE_STRAFE_SPEED = None
 
     def _get_prev_waypoint(self, me: Wizard):
         wp = self.WAY_POINTS[self.CURRENT_LINE][self.PREV_WAYPOINT]
@@ -238,34 +265,66 @@ class MyStrategy:
                 return None
         return wp
 
-    def _find_problem_units(self, me: Wizard):
+    def _find_problem_units(self, me: Wizard, reverse=False):
+
+        def is_problem_unit(angle, reverse, problem_sector):
+            if reverse:
+                return fabs(angle) > radians(180) - problem_sector
+            else:
+                return fabs(angle) < problem_sector
+
         units = self.W.buildings + self.W.wizards + self.W.minions + self.W.trees
         connected_u = [t for t in units if
                        me.get_distance_to_unit(t) <= (me.radius + t.radius) * 1.05 and me.id != t.id]
-        problem_u = [t for t in connected_u if fabs(me.get_angle_to_unit(t)) < self.PROBLEM_ANGLE]
+        problem_u = [t for t in connected_u if is_problem_unit(me.get_angle_to_unit(t), reverse, self.PROBLEM_ANGLE)]
         return None if not problem_u else problem_u[0]
 
-    def _goto(self, coords_tuple: (None, tuple), move: Move, me: Wizard):
+    def _goto_forward(self, me: Wizard):
+        coords_tuple = self._get_next_waypoint(me)
         problem_unit = self._find_problem_units(me)
         if problem_unit:
             angle_to_connected_unit = me.get_angle_to_unit(problem_unit)
             self.log('found connected unit %s (%.4f angle)' % (problem_unit.id, angle_to_connected_unit))
-            if angle_to_connected_unit > 0:
+            if angle_to_connected_unit >= 0:
                 self.log('run left')
-                move.strafe_speed = -1 * self.G.wizard_strafe_speed
+                self.MOVE_STRAFE_SPEED = -1 * self.G.wizard_strafe_speed
             else:
                 self.log('run right')
-                move.strafe_speed = self.G.wizard_strafe_speed
+                self.MOVE_STRAFE_SPEED = self.G.wizard_strafe_speed
         else:
             turn_only = False
             if coords_tuple is None:
                 turn_only = True
                 coords_tuple = (self.ENEMY_BASE.x, self.ENEMY_BASE.y)
             angle = me.get_angle_to(*coords_tuple)
-            move.turn = angle
+            self.MOVE_TURN = angle
 
             if fabs(angle) < self.STAFF_SECTOR / 4.0 and not turn_only:
-                move.speed = self.MAX_SPEED
+                self.MOVE_SPEED = self.MAX_SPEED
+
+    def _goto_backward(self, me: Wizard):
+        coords_tuple = self._get_prev_waypoint(me)
+        problem_unit = self._find_problem_units(me, True)
+        if problem_unit:
+            angle_to_connected_unit = me.get_angle_to_unit(problem_unit)
+            self.log('backward angle %.4f' % angle_to_connected_unit)
+            self.log('found connected unit %s (%.4f angle)' % (problem_unit.id, angle_to_connected_unit))
+            if angle_to_connected_unit > 0:
+                self.log('run right')
+                self.MOVE_STRAFE_SPEED = -1 * self.G.wizard_strafe_speed
+            else:
+                self.log('run left')
+                self.MOVE_STRAFE_SPEED = self.G.wizard_strafe_speed
+        else:
+            angle = me.get_angle_to(*coords_tuple)
+            angle_reverse = radians(180) - fabs(angle)
+            if angle > 0:
+                angle_reverse *= -1
+            self.log('backward angle %.4f %.4f' % (angle, angle_reverse))
+            self.log('backward angle staff %.4f' % self.STAFF_SECTOR)
+            self.MOVE_TURN = angle_reverse
+            if fabs(angle_reverse) < self.STAFF_SECTOR / 4.0:
+                self.MOVE_SPEED = -1 * self.MAX_SPEED
 
     def _select_enemy_for_attack(self, me: Wizard, enemy_targets: list):
         def _filter_into_attack_sector(el: list):
@@ -324,11 +383,6 @@ class MyStrategy:
             self.log('select building for attack %s' % e.id)
         return e
 
-    def _need_retreat(self, me: Wizard):
-        enemies_in_staff_zone = self._enemies_in_staff_distance(me)
-        return (me.life < me.max_life * self.LOW_HP_FACTOR or
-                len(enemies_in_staff_zone) > self.MAX_ENEMIES_IN_DANGER_ZONE)
-
     def _get_enemies(self):
         all_targets = self.W.buildings + self.W.wizards + self.W.minions
         enemy_targets = [t for t in all_targets if t.faction not in [self.FRIENDLY_FACTION, Faction.NEUTRAL]]
@@ -339,12 +393,6 @@ class MyStrategy:
         danger_enemies = [e for e in enemies
                           if self._enemy_in_staff_distance(me, e) or self._enemy_in_cast_distance(me, e)]
         self.log('found %d enemies in cast zone' % len(danger_enemies))
-        return danger_enemies
-
-    def _enemies_in_staff_distance(self, me: Wizard):
-        enemies = self._get_enemies()
-        danger_enemies = [e for e in enemies if self._enemy_in_staff_distance(me, e)]
-        self.log('found %d enemy in staff zone' % len(danger_enemies))
         return danger_enemies
 
     def _enemies_who_can_attack_me(self, me: Wizard):
@@ -360,7 +408,7 @@ class MyStrategy:
             elif isinstance(e, Minion) and e.type == MinionType.FETISH_BLOWDART:
                 attack_range = self.G.fetish_blowdart_attack_range
             elif isinstance(e, Minion) and e.type == MinionType.ORC_WOODCUTTER:
-                attack_range = self.G.orc_woodcutter_attack_range * 1.2
+                attack_range = self.G.orc_woodcutter_attack_range * 2
 
             if distance_to_me <= attack_range:
                 danger_enemies.append(e)
