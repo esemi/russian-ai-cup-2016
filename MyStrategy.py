@@ -57,7 +57,7 @@ class MyStrategy:
     PASS_TICK_COUNT = 30
 
     # если здоровья меньше данного количества - задумываемся об отступлении
-    LOW_HP_FACTOR = 0.3
+    LOW_HP_FACTOR = 0.35
 
     # максимальное количество врагов в ближней зоне, если больше - нужно сваливать
     MAX_ENEMIES_IN_DANGER_ZONE = 1
@@ -370,7 +370,11 @@ class MyStrategy:
                         e = _sort_by_hp(enemies_can_attack_now)[0]
                     self.log('select enemy for attack now by HP %s' % e.id)
                 else:
-                    e = _sort_by_distance(enemies_in_sector)[0]
+                    wizards = [e for e in enemies_in_sector if isinstance(e, Wizard)]
+                    if wizards:
+                        e = _sort_by_hp(wizards)[0]
+                    else:
+                        e = _sort_by_distance(enemies_in_sector)[0]
                     self.log('select nearest enemy for delayed attack (turn now) %s' % e.id)
 
             else:  # если таких нет - ищем самого слабого
@@ -408,7 +412,7 @@ class MyStrategy:
             elif isinstance(e, Minion) and e.type == MinionType.FETISH_BLOWDART:
                 attack_range = self.G.fetish_blowdart_attack_range
             elif isinstance(e, Minion) and e.type == MinionType.ORC_WOODCUTTER:
-                attack_range = self.G.orc_woodcutter_attack_range * 2
+                attack_range = self.G.orc_woodcutter_attack_range * 2.5
 
             if distance_to_me <= attack_range:
                 danger_enemies.append(e)
