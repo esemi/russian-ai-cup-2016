@@ -54,7 +54,7 @@ class MyStrategy:
     PROBLEM_ANGLE = radians(90)
 
     # количество тиков, которое мы пропускаем в начале боя
-    PASS_TICK_COUNT = 30
+    PASS_TICK_COUNT = 5
 
     # если здоровья меньше данного количества - задумываемся об отступлении
     LOW_HP_FACTOR = 0.35
