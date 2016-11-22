@@ -351,39 +351,39 @@ class MyStrategy:
                         result.append(e)
             return result
 
-        living_units = [e for e in enemy_targets if not isinstance(e, Building)]
-        buildings = [e for e in enemy_targets if isinstance(e, Building)]
-
-        # если есть живые враги
-        if living_units:
-            self.log('found living enemies %d' % len(living_units))
-            enemies_in_sector = _filter_into_attack_sector(living_units)
-
+        def _select(enemies, type, distance_force=True):
+            self.log('found %s enemies %d' % (type, len(enemies)))
+            enemies_in_sector = _filter_into_attack_sector(enemies)
             if enemies_in_sector:  # выбираем того, кого мы сможем ударить прямо сейчас
                 self.log('found enemies in attack sector %d' % len(enemies_in_sector))
                 enemies_can_attack_now = _filter_can_attack_now(enemies_in_sector)
                 if enemies_can_attack_now:
-                    wizards = [e for e in enemies_can_attack_now if isinstance(e, Wizard)]
-                    if wizards:
-                        e = _sort_by_hp(wizards)[0]
-                    else:
-                        e = _sort_by_hp(enemies_can_attack_now)[0]
+                    e = _sort_by_hp(enemies_can_attack_now)[0]
                     self.log('select enemy for attack now by HP %s' % e.id)
-                else:
-                    wizards = [e for e in enemies_in_sector if isinstance(e, Wizard)]
-                    if wizards:
-                        e = _sort_by_hp(wizards)[0]
-                    else:
-                        e = _sort_by_distance(enemies_in_sector)[0]
+                elif distance_force:
+                    e = _sort_by_distance(enemies_in_sector)[0]
                     self.log('select nearest enemy for delayed attack (turn now) %s' % e.id)
-
+                else:
+                    e = _sort_by_angle(enemies_in_sector)[0]
+                    self.log('select enemy for delayed attack by angle (turn now) %s' % e.id)
             else:  # если таких нет - ищем самого слабого
-                self.log('all living enemies not in attack sector')
+                self.log('all enemies not in attack sector')
                 e = _sort_by_hp(living_units)[0]
                 self.log('select enemy for turn %s' % e.id)
+            return e
 
-        else:  # если никого кроме зданий во врагах нет - мочим самое слабое здание
-            e = _sort_by_hp(buildings)[0]
+        buildings = [e for e in enemy_targets if isinstance(e, Building)]
+        wizards = [e for e in enemy_targets if isinstance(e, Wizard)]
+        minions = [e for e in enemy_targets if isinstance(e, Minion)]
+
+        if wizards:
+            e = _select(wizards, 'wizards', False)
+            self.log('select wizard for attack %s' % e.id)
+        elif minions:
+            e = _select(minions, 'minions', True)
+            self.log('select minion for attack %s' % e.id)
+        else:
+            e = _select(buildings, 'buildings', False)
             self.log('select building for attack %s' % e.id)
         return e
 
