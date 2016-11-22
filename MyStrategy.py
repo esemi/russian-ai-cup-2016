@@ -405,7 +405,7 @@ class MyStrategy:
             distance_to_me = e.get_distance_to_unit(me) - me.radius
             attack_range = 0
             if isinstance(e, Building):
-                attack_range = e.attack_range
+                attack_range = e.attack_range * 1.1
             elif isinstance(e, Wizard):
                 attack_range = e.cast_range
                 distance_to_me = self._cast_distance(e, me)
