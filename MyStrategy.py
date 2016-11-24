@@ -27,18 +27,11 @@ class MyStrategy:
     LOGS_ENABLE = True
     INITIATED = False
 
-    # attack strafe move
-    ATTACK_STRAFE_LIMIT = 10
-    ATTACK_STRAFE_MOD = -1
-    ATTACK_STRAFE_COUNTER = 0
-
     # waypoints functionality
     WAY_POINTS = {}
     CURRENT_LINE = None
     NEXT_WAYPOINT = 1
     PREV_WAYPOINT = 0
-
-
 
     # move constants
     MOVE_TURN = None
@@ -53,7 +46,7 @@ class MyStrategy:
     MAP_ANGLE_OFFSET = 600
 
     # angle sector of connected units is problem for go
-    PROBLEM_ANGLE = radians(90)
+    PROBLEM_ANGLE = radians(95)
 
     # количество тиков, которое мы пропускаем в начале боя
     PASS_TICK_COUNT = 5
@@ -66,6 +59,11 @@ class MyStrategy:
 
     # pseudo enemy base unit. Use for angle to it when way line ended
     ENEMY_BASE = None
+
+    # projectile care
+    PROJECTILE_SAFE_RANGE_FACTOR = 0.95
+    PROJECTILE_MAP = {}
+    PROJECTILE_LAST_ENEMY = None
 
     def _init(self, game: Game, me: Wizard, world: World, move: Move):
         self.W = world
@@ -177,6 +175,21 @@ class MyStrategy:
         retreat_move_lock = False
         retreat_by_low_hp = False
 
+        # чистим уже погибшие снаряды из карты
+        current_projectiles_id = set([p.id for p in self.W.projectiles if p.owner_unit_id == me.id])
+        cached_projectiles_id = set(self.PROJECTILE_MAP.keys())
+        for k in cached_projectiles_id - current_projectiles_id:
+            del self.PROJECTILE_MAP[k]
+
+        # ищем последний созданный снаряд и его цель для карты снарядов
+        if self.PROJECTILE_LAST_ENEMY:
+            for p in self.W.projectiles:
+                if p.owner_unit_id == me.id and p.id not in self.PROJECTILE_MAP:
+                    self.PROJECTILE_MAP[p.id] = self.PROJECTILE_LAST_ENEMY
+                    self.PROJECTILE_LAST_ENEMY = None
+                    break
+        self.log('projectile map %s' % str(self.PROJECTILE_MAP))
+
         # если ХП мало отступаем
         if me.life < me.max_life * self.LOW_HP_FACTOR:
             retreat_by_low_hp = True
@@ -195,13 +208,14 @@ class MyStrategy:
             self.log('move to next waypoint')
             self._goto_forward(me)
 
-        # если на поле есть наши снаряды и расстояние до цели меньше расстояния каста - пробуем подойти к цели (если не находимся в отступлении)
-        # if not retreat_move_lock and self.MOVE_STRAFE_SPEED is None:
-        #     if fabs(self.ATTACK_STRAFE_COUNTER) >= self.ATTACK_STRAFE_LIMIT:
-        #         self.ATTACK_STRAFE_MOD *= -1
-        #     self.ATTACK_STRAFE_COUNTER += self.ATTACK_STRAFE_MOD
-        #     self.log('strafe move for attack %d %d' % (self.ATTACK_STRAFE_COUNTER, self.ATTACK_STRAFE_MOD))
-        #     self.MOVE_STRAFE_SPEED = self.ATTACK_STRAFE_MOD * self.G.wizard_strafe_speed
+        # если на поле есть наши снаряды и расстояние до цели меньше расстояния каста
+        # пробуем подойти к цели (если не находимся в отступлении)
+        if not retreat_by_low_hp:
+            potential_miss_enemies = self._find_potential_miss_enemy(me)
+            self.log('found %s potential miss enemies' % potential_miss_enemies)
+            if potential_miss_enemies:
+                e = self._sort_by_angle(me, potential_miss_enemies)[0]
+                self._goto_enemy(me, e)
 
         if enemy_targets:
             # есть враги в радиусе обстрела
@@ -224,6 +238,8 @@ class MyStrategy:
                     self.log('cast attack')
                     move.action = ActionType.MAGIC_MISSILE
                     move.min_cast_distance = self._cast_distance(me, selected_enemy)
+                    self.PROJECTILE_LAST_ENEMY = selected_enemy.id
+                    
                 else:
                     self.log('staff attack')
                     move.action = ActionType.STAFF
@@ -306,6 +322,13 @@ class MyStrategy:
             if fabs(angle) < self.STAFF_SECTOR / 4.0 and not turn_only:
                 self.MOVE_SPEED = self.MAX_SPEED
 
+    def _goto_enemy(self, me: Wizard, e: LivingUnit):
+        angle = me.get_angle_to_unit(e)
+        self.log('enemy angle for projectile care is %.2f' % angle)
+        if fabs(angle) < self.STAFF_SECTOR / 4.0:
+            self.MOVE_TURN = angle
+            self.MOVE_SPEED = self.MAX_SPEED
+
     def _goto_backward(self, me: Wizard):
         coords_tuple = self._get_prev_waypoint(me)
         problem_unit = self._find_problem_units(me, True)
@@ -330,15 +353,16 @@ class MyStrategy:
             if fabs(angle_reverse) < self.STAFF_SECTOR / 4.0:
                 self.MOVE_SPEED = -1 * self.MAX_SPEED
 
+    @staticmethod
+    def _sort_by_angle(me: Wizard, el: list):
+        return sorted(el, key=lambda u: fabs(me.get_angle_to_unit(u)))
+
     def _select_enemy_for_attack(self, me: Wizard, enemy_targets: list):
         def _filter_into_attack_sector(el: list):
             return [e for e in el if self._enemy_in_attack_sector(me, e)]
 
         def _sort_by_hp(el: list):
             return sorted(el, key=lambda u: u.life)
-
-        def _sort_by_angle(el: list):
-            return sorted(el, key=lambda u: fabs(me.get_angle_to_unit(u)))
 
         def _sort_by_distance(el: list):
             return sorted(el, key=lambda u: me.get_distance_to_unit(u))
@@ -368,7 +392,7 @@ class MyStrategy:
                     e = _sort_by_distance(enemies_in_sector)[0]
                     self.log('select nearest enemy for delayed attack (turn now) %s' % e.id)
                 else:
-                    e = _sort_by_angle(enemies_in_sector)[0]
+                    e = self._sort_by_angle(me, enemies_in_sector)[0]
                     self.log('select enemy for delayed attack by angle (turn now) %s' % e.id)
             else:  # если таких нет - ищем самого слабого
                 self.log('all enemies not in attack sector')
@@ -439,3 +463,9 @@ class MyStrategy:
     def log(self, message):
         if self.LOGS_ENABLE:
             print(message)
+
+    def _find_potential_miss_enemy(self, me: Wizard):
+        all_enemies = self._get_enemies()
+        target_enemies = [e for e in all_enemies if e.id in self.PROJECTILE_MAP.items()]
+        return [e for e in target_enemies
+                if self._cast_distance(me, e) > me.cast_range * self.PROJECTILE_SAFE_RANGE_FACTOR]
