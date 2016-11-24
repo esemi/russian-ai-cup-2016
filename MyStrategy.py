@@ -1,5 +1,6 @@
 from math import fabs, radians
 from copy import copy
+import operator
 import random
 
 from model.ActionType import ActionType
@@ -28,8 +29,12 @@ class MyStrategy:
     INITIATED = False
 
     # waypoints functionality
+    MIN_DISTANSE_TO_HOME = 800
     WAY_POINTS = {}
+    INIT_POINT = None
     CURRENT_LINE = None
+    SELECT_LANE_TICK = 0
+    SELECT_LANE_TICK_STEP = 500
     NEXT_WAYPOINT = 1
     PREV_WAYPOINT = 0
 
@@ -49,7 +54,7 @@ class MyStrategy:
     PROBLEM_ANGLE = radians(95)
 
     # количество тиков, которое мы пропускаем в начале боя
-    PASS_TICK_COUNT = 5
+    PASS_TICK_COUNT = 20
 
     # если здоровья меньше данного количества - задумываемся об отступлении
     LOW_HP_FACTOR = 0.35
@@ -99,11 +104,11 @@ class MyStrategy:
         map_size = self.G.map_size
         friendly_base = [b for b in self.W.buildings
                          if b.faction == self.FRIENDLY_FACTION and b.type == BuildingType.FACTION_BASE][0]
-        init_point = (me.x, me.y)
+        self.INIT_POINT = (me.x, me.y)
 
         # top line
         wps = list()
-        wps.append(init_point)
+        wps.append(self.INIT_POINT)
         wps.append((200, 2700))
         wps.append((200, 1700))
         wps.append((200, 800))
@@ -116,7 +121,7 @@ class MyStrategy:
 
         # bottom line
         wps = list()
-        wps.append(init_point)
+        wps.append(self.INIT_POINT)
         wps.append((1200, 3800))
         wps.append((2300, 3800))
         wps.append((3200, 3800))
@@ -129,7 +134,7 @@ class MyStrategy:
 
         # middle line
         wps = list()
-        wps.append(init_point)
+        wps.append(self.INIT_POINT)
         wps.append((1050, 2850))
         wps.append((1800, 2120))
         wps.append((2940.0, 1060.0))
@@ -140,10 +145,58 @@ class MyStrategy:
         self.ENEMY_BASE.x = map_size - self.ENEMY_BASE.x
         self.ENEMY_BASE.y = map_size - self.ENEMY_BASE.y
 
+    def _select_lane(self, me: Wizard):
+        if self._near_begin_waypoint(me):
+            self.log('skip waypoint indexes')
+            self.NEXT_WAYPOINT = 1
+            self.PREV_WAYPOINT = 0
+
+        if self.SELECT_LANE_TICK <= self.W.tick_index and self._near_begin_waypoint(me):
+            self.log('select lane process')
+            self.SELECT_LANE_TICK = self.W.tick_index + self.SELECT_LANE_TICK_STEP
+            lane_teammates_counter = {LaneType.TOP: 0, LaneType.BOTTOM: 0, LaneType.MIDDLE: 0}
+            teammates = [w for w in self.W.wizards if w.faction == self.FRIENDLY_FACTION and not w.me]
+            teammates_on_lanes = [f for f in teammates
+                                  if f.get_distance_to(*self.INIT_POINT) > self.MIN_DISTANSE_TO_HOME]
+            self.log('teammates on lanes %s' % teammates_on_lanes)
+            for f in teammates_on_lanes:
+                top_min = min([f.get_distance_to(*point) for point in self.WAY_POINTS[LaneType.TOP]])
+                mid_min = min([f.get_distance_to(*point) for point in self.WAY_POINTS[LaneType.MIDDLE]])
+                bot_min = min([f.get_distance_to(*point) for point in self.WAY_POINTS[LaneType.BOTTOM]])
+                self.log('teammate dists top %d mid %d bot %d' % (top_min, mid_min, bot_min))
+
+                if mid_min <= top_min and mid_min <= bot_min:
+                    self.log('teammate on mid lane')
+                    lane_teammates_counter[LaneType.MIDDLE] += 1
+                    continue
+
+                if top_min <= mid_min and top_min <= bot_min:
+                    self.log('teammate on top lane')
+                    lane_teammates_counter[LaneType.TOP] += 1
+                    continue
+
+                if bot_min <= mid_min and bot_min <= top_min:
+                    self.log('teammate on bottom lane')
+                    lane_teammates_counter[LaneType.BOTTOM] += 1
+                    continue
+
+            self.log('teammates on lanes counter %s' % lane_teammates_counter)
+
+            min_counter = sorted(lane_teammates_counter.items(), key=operator.itemgetter(1))[0][1]
+            filtered = [l[0] for l in filter(lambda x: x[1] == min_counter, lane_teammates_counter.items())]
+            self.CURRENT_LINE = random.choice(filtered)
+            self.log('select %s line (from %s)' % (self.CURRENT_LINE, filtered))
+
+            # if me.messages:
+            #     m = me.messages.pop()
+            #     if m in list(self.WAY_POINTS.keys()):
+            #         self.CURRENT_LINE = m
+            #         self.log('select %s line by message' % self.CURRENT_LINE)
+
     def move(self, me: Wizard, world: World, game: Game, move: Move):
         self.log('TICK %s' % world.tick_index)
-        self.log('me %s %s' % (me.x, me.y))
         self._init(game, me, world, move)
+        self.log('me %s %s %f' % (me.x, me.y, me.get_distance_to(*self.INIT_POINT)))
 
         # initial cooldown
         if self.PASS_TICK_COUNT:
@@ -151,23 +204,8 @@ class MyStrategy:
             self.log('initial cooldown pass turn')
             return
 
-        # select line rush for this battle
-        if self.CURRENT_LINE is None:
-            self.CURRENT_LINE = random.choice(list(self.WAY_POINTS.keys()))
-            self.log('select %s line' % self.CURRENT_LINE)
-            if me.messages:
-                m = me.messages.pop()
-                if m in list(self.WAY_POINTS.keys()):
-                    self.CURRENT_LINE = m
-                    self.log('select %s line by message' % self.CURRENT_LINE)
-
-        # if die crutch
-        # если находимся в досягаемости нашей первой точкт (инит поинт)
-        # то нужно принудительно скипнуть индексе вейпоинтов
-        if self._near_begin_waypoint(me):
-            self.log('skip waypoint indexes')
-            self.NEXT_WAYPOINT = 1
-            self.PREV_WAYPOINT = 0
+        # select lane
+        self._select_lane(me)
 
         # STRATEGY LOGIC
         enemy_targets = self._enemies_in_attack_distance(me)
@@ -239,7 +277,6 @@ class MyStrategy:
                     move.action = ActionType.MAGIC_MISSILE
                     move.min_cast_distance = self._cast_distance(me, selected_enemy)
                     self.PROJECTILE_LAST_ENEMY = selected_enemy.id
-                    
                 else:
                     self.log('staff attack')
                     move.action = ActionType.STAFF
@@ -271,7 +308,7 @@ class MyStrategy:
         return me.get_distance_to(*wp_coords) < me.radius * 2
 
     def _near_begin_waypoint(self, me: Wizard):
-        return self._near_waypoint(me, self.WAY_POINTS[self.CURRENT_LINE][0])
+        return self._near_waypoint(me, self.INIT_POINT)
 
     def _get_next_waypoint(self, me: Wizard):
         wp = self.WAY_POINTS[self.CURRENT_LINE][self.NEXT_WAYPOINT]
