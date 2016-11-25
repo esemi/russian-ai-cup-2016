@@ -470,7 +470,7 @@ class MyStrategy:
             distance_to_me = e.get_distance_to_unit(me) - me.radius
             attack_range = 0
             if isinstance(e, Building):
-                attack_range = e.attack_range * 1.1
+                attack_range = e.attack_range
             elif isinstance(e, Wizard):
                 attack_range = e.cast_range
                 distance_to_me = self._cast_distance(e, me)
@@ -479,7 +479,7 @@ class MyStrategy:
             elif isinstance(e, Minion) and e.type == MinionType.ORC_WOODCUTTER:
                 attack_range = self.G.orc_woodcutter_attack_range * 2.5
 
-            if distance_to_me <= attack_range:
+            if distance_to_me <= attack_range * 1.1:
                 danger_enemies.append(e)
         self.log('found %d enemies who can attack me' % len(danger_enemies))
         return danger_enemies
