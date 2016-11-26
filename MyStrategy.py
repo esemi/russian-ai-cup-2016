@@ -44,23 +44,16 @@ class MyStrategy:
     MOVE_STRAFE_SPEED = None
     MOVE_SPEED = None
 
-    # enemy base offset for last way point on all lines
-    ENEMY_BASE_OFFSET = 660
-    # offset of home base for first way point on all line
-    FRIENDLY_BASE_OFFSET = 100
-    # offset of map angle
-    MAP_ANGLE_OFFSET = 600
-
     # angle sector of connected units is problem for go
     PROBLEM_ANGLE = radians(95)
 
     # количество тиков, которое мы пропускаем в начале боя
-    PASS_TICK_COUNT = 20
+    PASS_TICK_COUNT = 5
 
     # если здоровья меньше данного количества - задумываемся об отступлении
-    LOW_HP_FACTOR = 0.35
+    LOW_HP_FACTOR = 0.38
 
-    # максимальное количество врагов в ближней зоне, если больше - нужно сваливать
+    # максимальное количество врагов в опасной зоне, если больше - нужно сваливать
     MAX_ENEMIES_IN_DANGER_ZONE = 1
 
     # pseudo enemy base unit. Use for angle to it when way line ended
