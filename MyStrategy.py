@@ -205,23 +205,23 @@ class MyStrategy:
         # STRATEGY LOGIC
         enemy_targets = self._enemies_in_attack_distance(me)
         retreat_move_lock = False
-        retreat_by_low_hp = False
+
+        need_retreat_by_hp = me.life < me.max_life * self.LOW_HP_FACTOR
+        need_retreat_by_enemies = len(self._enemies_who_can_attack_me(me)) > self.MAX_ENEMIES_IN_DANGER_ZONE
 
         # если ХП мало отступаем
-        if me.life < me.max_life * self.LOW_HP_FACTOR:
-            retreat_by_low_hp = True
+        if need_retreat_by_hp:
             self.log('retreat by low HP')
-            if self._enemies_who_can_attack_me(me, 1.1):
+            if self._enemies_who_can_attack_me(me, 1.2):
                 self._goto_backward(me)
                 retreat_move_lock = True
-
-        if self._enemies_who_can_attack_me(me) > self.MAX_ENEMIES_IN_DANGER_ZONE:
+        elif need_retreat_by_enemies:
             self.log('retreat by enemies in danger zone')
             self._goto_backward(me)
             retreat_move_lock = True
 
         # если врагов в радиусе обстрела нет - идём к их базе если не находимся в режиме отступления
-        if not enemy_targets and not retreat_by_low_hp:
+        if not enemy_targets and not retreat_move_lock:
             self.log('move to next waypoint')
             self._goto_forward(me)
 
