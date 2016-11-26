@@ -16,6 +16,7 @@ from model.Building import Building
 from model.BuildingType import BuildingType
 from model.Message import Message
 from model.LaneType import LaneType
+from model.Projectile import Projectile
 
 
 class MyStrategy:
@@ -206,22 +207,18 @@ class MyStrategy:
         enemy_targets = self._enemies_in_attack_distance(me)
         retreat_move_lock = False
 
-        need_retreat_by_hp = me.life < me.max_life * self.LOW_HP_FACTOR
+        need_retreat_by_hp = me.life < me.max_life * self.LOW_HP_FACTOR and self._enemies_who_can_attack_me(me, 1.2)
         need_retreat_by_enemies = len(self._enemies_who_can_attack_me(me)) > self.MAX_ENEMIES_IN_DANGER_ZONE
 
-        # если ХП мало отступаем
         if need_retreat_by_hp:
             self.log('retreat by low HP')
-            if self._enemies_who_can_attack_me(me, 1.2):
-                self._goto_backward(me)
-                retreat_move_lock = True
+            self._goto_backward(me)
+            retreat_move_lock = True
         elif need_retreat_by_enemies:
             self.log('retreat by enemies in danger zone')
             self._goto_backward(me)
             retreat_move_lock = True
-
-        # если врагов в радиусе обстрела нет - идём к их базе если не находимся в режиме отступления
-        if not enemy_targets and not retreat_move_lock:
+        elif not enemy_targets:
             self.log('move to next waypoint')
             self._goto_forward(me)
 
@@ -421,8 +418,10 @@ class MyStrategy:
             self.log('select building for attack %s' % e.id)
         return e
 
-    def _get_enemies(self):
+    def _get_enemies(self, projectile=False):
         all_targets = self.W.buildings + self.W.wizards + self.W.minions
+        if projectile:
+            all_targets += self.W.projectiles
         enemy_targets = [t for t in all_targets if t.faction not in [self.FRIENDLY_FACTION, Faction.NEUTRAL]]
         return enemy_targets
 
@@ -433,9 +432,10 @@ class MyStrategy:
         self.log('found %d enemies in cast zone' % len(danger_enemies))
         return danger_enemies
 
-    def _enemies_who_can_attack_me(self, me: Wizard, paranoid_factor=1.):
+    def _enemies_who_can_attack_me(self, me: Wizard, paranoid=False):
+        enemies = self._get_enemies(paranoid)
         danger_enemies = []
-        for e in self._get_enemies():
+        for e in enemies:
             distance_to_me = e.get_distance_to_unit(me) - me.radius
             attack_range = 0
             if isinstance(e, Building):
@@ -443,11 +443,17 @@ class MyStrategy:
             elif isinstance(e, Wizard):
                 attack_range = e.cast_range
                 distance_to_me = self._cast_distance(e, me)
+            elif isinstance(e, Projectile):
+                if fabs(e.get_angle_to_unit(me)) < radians(10) and paranoid:
+                    attack_range = me.cast_range
+                else:
+                    attack_range = e.radius
             elif isinstance(e, Minion) and e.type == MinionType.FETISH_BLOWDART:
                 attack_range = self.G.fetish_blowdart_attack_range
             elif isinstance(e, Minion) and e.type == MinionType.ORC_WOODCUTTER:
                 attack_range = self.G.orc_woodcutter_attack_range * 2.5
 
+            paranoid_factor = 1.2 if paranoid else 1.
             if distance_to_me <= attack_range * paranoid_factor:
                 danger_enemies.append(e)
         self.log('found %d enemies who can attack me' % len(danger_enemies))
