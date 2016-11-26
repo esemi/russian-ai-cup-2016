@@ -204,7 +204,6 @@ class MyStrategy:
 
         # STRATEGY LOGIC
         enemy_targets = self._enemies_in_attack_distance(me)
-        enemy_who_can_attack_me = self._enemies_who_can_attack_me(me)
         retreat_move_lock = False
         retreat_by_low_hp = False
 
@@ -212,11 +211,11 @@ class MyStrategy:
         if me.life < me.max_life * self.LOW_HP_FACTOR:
             retreat_by_low_hp = True
             self.log('retreat by low HP')
-            if len(enemy_who_can_attack_me):
+            if self._enemies_who_can_attack_me(me, 1.1):
                 self._goto_backward(me)
                 retreat_move_lock = True
 
-        if len(enemy_who_can_attack_me) > self.MAX_ENEMIES_IN_DANGER_ZONE:
+        if self._enemies_who_can_attack_me(me) > self.MAX_ENEMIES_IN_DANGER_ZONE:
             self.log('retreat by enemies in danger zone')
             self._goto_backward(me)
             retreat_move_lock = True
@@ -434,7 +433,7 @@ class MyStrategy:
         self.log('found %d enemies in cast zone' % len(danger_enemies))
         return danger_enemies
 
-    def _enemies_who_can_attack_me(self, me: Wizard):
+    def _enemies_who_can_attack_me(self, me: Wizard, paranoid_factor=1.):
         danger_enemies = []
         for e in self._get_enemies():
             distance_to_me = e.get_distance_to_unit(me) - me.radius
@@ -449,7 +448,7 @@ class MyStrategy:
             elif isinstance(e, Minion) and e.type == MinionType.ORC_WOODCUTTER:
                 attack_range = self.G.orc_woodcutter_attack_range * 2.5
 
-            if distance_to_me <= attack_range:
+            if distance_to_me <= attack_range * paranoid_factor:
                 danger_enemies.append(e)
         self.log('found %d enemies who can attack me' % len(danger_enemies))
         return danger_enemies
