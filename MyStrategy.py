@@ -65,11 +65,6 @@ class MyStrategy:
     # pseudo enemy base unit. Use for angle to it when way line ended
     ENEMY_BASE = None
 
-    # projectile care
-    PROJECTILE_SAFE_RANGE_FACTOR = 0.95
-    PROJECTILE_MAP = {}
-    PROJECTILE_LAST_ENEMY = None
-
     def _init(self, game: Game, me: Wizard, world: World, move: Move):
         self.W = world
         self.G = game
@@ -187,11 +182,11 @@ class MyStrategy:
             self.CURRENT_LINE = random.choice(filtered)
             self.log('select %s line (from %s)' % (self.CURRENT_LINE, filtered))
 
-            # if me.messages:
-            #     m = me.messages.pop()
-            #     if m in list(self.WAY_POINTS.keys()):
-            #         self.CURRENT_LINE = m
-            #         self.log('select %s line by message' % self.CURRENT_LINE)
+            if me.messages:
+                m = me.messages.pop()
+                if m in list(self.WAY_POINTS.keys()):
+                    self.CURRENT_LINE = m
+                    self.log('select %s line by message' % self.CURRENT_LINE)
 
     def move(self, me: Wizard, world: World, game: Game, move: Move):
         self.log('TICK %s' % world.tick_index)
@@ -213,21 +208,6 @@ class MyStrategy:
         retreat_move_lock = False
         retreat_by_low_hp = False
 
-        # чистим уже погибшие снаряды из карты
-        current_projectiles_id = set([p.id for p in self.W.projectiles if p.owner_unit_id == me.id])
-        cached_projectiles_id = set(self.PROJECTILE_MAP.keys())
-        for k in cached_projectiles_id - current_projectiles_id:
-            del self.PROJECTILE_MAP[k]
-
-        # ищем последний созданный снаряд и его цель для карты снарядов
-        if self.PROJECTILE_LAST_ENEMY:
-            for p in self.W.projectiles:
-                if p.owner_unit_id == me.id and p.id not in self.PROJECTILE_MAP:
-                    self.PROJECTILE_MAP[p.id] = self.PROJECTILE_LAST_ENEMY
-                    self.PROJECTILE_LAST_ENEMY = None
-                    break
-        self.log('projectile map %s' % str(self.PROJECTILE_MAP))
-
         # если ХП мало отступаем
         if me.life < me.max_life * self.LOW_HP_FACTOR:
             retreat_by_low_hp = True
@@ -245,15 +225,6 @@ class MyStrategy:
         if not enemy_targets and not retreat_by_low_hp:
             self.log('move to next waypoint')
             self._goto_forward(me)
-
-        # если на поле есть наши снаряды и расстояние до цели меньше расстояния каста
-        # пробуем подойти к цели (если не находимся в отступлении)
-        if not retreat_by_low_hp:
-            potential_miss_enemies = self._find_potential_miss_enemy(me)
-            self.log('found %s potential miss enemies' % potential_miss_enemies)
-            if potential_miss_enemies:
-                e = self._sort_by_angle(me, potential_miss_enemies)[0]
-                self._goto_enemy(me, e)
 
         if enemy_targets:
             # есть враги в радиусе обстрела
@@ -276,7 +247,6 @@ class MyStrategy:
                     self.log('cast attack')
                     move.action = ActionType.MAGIC_MISSILE
                     move.min_cast_distance = self._cast_distance(me, selected_enemy)
-                    self.PROJECTILE_LAST_ENEMY = selected_enemy.id
                 else:
                     self.log('staff attack')
                     move.action = ActionType.STAFF
@@ -500,9 +470,3 @@ class MyStrategy:
     def log(self, message):
         if self.LOGS_ENABLE:
             print(message)
-
-    def _find_potential_miss_enemy(self, me: Wizard):
-        all_enemies = self._get_enemies()
-        target_enemies = [e for e in all_enemies if e.id in self.PROJECTILE_MAP.items()]
-        return [e for e in target_enemies
-                if self._cast_distance(me, e) > me.cast_range * self.PROJECTILE_SAFE_RANGE_FACTOR]
