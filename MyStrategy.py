@@ -456,7 +456,7 @@ class MyStrategy:
         return me.get_distance_to_unit(e) <= (self.G.staff_range + e.radius)
 
     def _enemy_in_cast_distance(self, me: Wizard, e: LivingUnit):
-        return self._cast_distance(me, e) < me.cast_range and not self._enemy_in_staff_distance(me, e)
+        return self._cast_distance(me, e) <= me.cast_range and not self._enemy_in_staff_distance(me, e)
 
     def _cast_distance(self, me: Wizard, e: LivingUnit):
         projectile_radius = self.G.magic_missile_radius
