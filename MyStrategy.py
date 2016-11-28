@@ -3,6 +3,8 @@ from copy import copy
 import operator
 import random
 
+
+from model.SkillType import SkillType
 from model.ActionType import ActionType
 from model.LivingUnit import LivingUnit
 from model.Game import Game
@@ -58,6 +60,9 @@ class MyStrategy:
 
     # pseudo enemy base unit. Use for angle to it when way line ended
     ENEMY_BASE = None
+
+    # skill learning
+    LAST_LEVEL = 0
 
     def _init(self, game: Game, me: Wizard, world: World, move: Move):
         self.W = world
@@ -182,6 +187,38 @@ class MyStrategy:
                     self.CURRENT_LINE = m
                     self.log('select %s line by message' % self.CURRENT_LINE)
 
+    def _learn_skill(self, me: Wizard, move: Move):
+        self.log('me skills %s %s' % (self.LAST_LEVEL, me.skills))
+
+        skill_map = [
+            SkillType.MAGICAL_DAMAGE_BONUS_PASSIVE_1,
+            SkillType.RANGE_BONUS_PASSIVE_1,
+            SkillType.MAGICAL_DAMAGE_ABSORPTION_PASSIVE_1,
+            SkillType.MOVEMENT_BONUS_FACTOR_PASSIVE_1,
+
+            SkillType.RANGE_BONUS_AURA_1,
+            SkillType.RANGE_BONUS_PASSIVE_2,
+            SkillType.RANGE_BONUS_AURA_2,
+            SkillType.ADVANCED_MAGIC_MISSILE,
+
+            SkillType.MAGICAL_DAMAGE_BONUS_AURA_1,
+            SkillType.MAGICAL_DAMAGE_BONUS_PASSIVE_2,
+
+            SkillType.MAGICAL_DAMAGE_ABSORPTION_AURA_1,
+            SkillType.MAGICAL_DAMAGE_ABSORPTION_PASSIVE_2,
+
+            SkillType.MAGICAL_DAMAGE_BONUS_AURA_2,
+            SkillType.MAGICAL_DAMAGE_ABSORPTION_AURA_2,
+
+            SkillType.MOVEMENT_BONUS_FACTOR_AURA_1,
+            SkillType.MOVEMENT_BONUS_FACTOR_PASSIVE_2,
+            SkillType.MOVEMENT_BONUS_FACTOR_AURA_2,
+        ]
+
+        if me.level > self.LAST_LEVEL:
+            self.LAST_LEVEL = me.level
+        move.skill_to_learn = skill_map[self.LAST_LEVEL]
+
     def move(self, me: Wizard, world: World, game: Game, move: Move):
         self.log('TICK %s' % world.tick_index)
         self._init(game, me, world, move)
@@ -195,6 +232,8 @@ class MyStrategy:
 
         # select lane
         self._select_lane(me)
+
+        self._learn_skill(me, move)
 
         # STRATEGY LOGIC
         enemy_targets = self._enemies_in_attack_distance(me)
@@ -456,7 +495,7 @@ class MyStrategy:
         return me.get_distance_to_unit(e) <= (self.G.staff_range + e.radius)
 
     def _enemy_in_cast_distance(self, me: Wizard, e: LivingUnit):
-        return self._cast_distance(me, e) <= me.cast_range and not self._enemy_in_staff_distance(me, e)
+        return self._cast_distance(me, e) < me.cast_range and not self._enemy_in_staff_distance(me, e)
 
     def _cast_distance(self, me: Wizard, e: LivingUnit):
         projectile_radius = self.G.magic_missile_radius
